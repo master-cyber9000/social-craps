@@ -1,0 +1,14 @@
+app/table/[code]/page.tsx(613,35): error TS7006: Parameter 'p' implicitly has an 'any' type.
+app/table/[code]/page.tsx(620,50): error TS7006: Parameter 'p' implicitly has an 'any' type.
+app/table/[code]/page.tsx(644,99): error TS7006: Parameter 'p' implicitly has an 'any' type.
+app/table/[code]/page.tsx(659,37): error TS7006: Parameter 'p' implicitly has an 'any' type.
+app/table/[code]/page.tsx(1157,25): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.
+app/table/[code]/page.tsx(1157,45): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.
+app/table/[code]/page.tsx(1159,49): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.
+app/table/[code]/page.tsx(1162,69): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.
+app/table/[code]/page.tsx(1164,49): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.
+app/table/[code]/page.tsx(1166,61): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.
+app/table/[code]/page.tsx(1167,32): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.
+app/table/[code]/page.tsx(1167,52): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.
+app/table/[code]/page.tsx(1170,49): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.
+app/table/[code]/page.tsx(1172,62): error TS2339: Property 'last_win' does not exist on type 'Partial<RideLink>'.

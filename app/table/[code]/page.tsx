@@ -149,13 +149,22 @@ const BUY_PAYOUTS: Record<number, [number, number]> = {
   8: [6, 5], 9: [3, 2], 10: [2, 1]
 };
 
+const StatBox = ({ label, value, color = 'white' }: { label: string; value: string | number; color?: string }) => (
+  <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', padding: '10px' }}>
+    <div style={{ color: '#666', fontSize: '9px', marginBottom: '4px', letterSpacing: '1px' }}>{label}</div>
+    <div style={{ color, fontSize: '16px', fontWeight: 'bold' }}>{value}</div>
+  </div>
+);
+
 const CloseOutCard = ({ 
   character,
   balance,
   sessionStats,
   activeRide,
+  isShooter,
   onSave,
-  onSkip
+  onSkip,
+  onKeepPlaying
 }: any) => {
   const [message, setMessage] = useState('');
   const cardRef = useRef<HTMLDivElement>(null);
@@ -186,8 +195,11 @@ const CloseOutCard = ({
       backgroundColor: 'rgba(0,0,0,0.95)',
       zIndex: 100,
       display: 'flex',
+      flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'center'
+      justifyContent: 'center',
+      padding: '20px',
+      overflow: 'auto'
     }}>
       {/* The card — this gets captured by html2canvas */}
       <div
@@ -197,13 +209,14 @@ const CloseOutCard = ({
           border: '2px solid #FFD700',
           borderRadius: '16px',
           padding: '32px',
-          width: '380px',
+          width: '400px',
+          maxWidth: '100%',
           textAlign: 'center',
           fontFamily: 'Arial, sans-serif'
         }}
       >
         {/* Logo */}
-        <div style={{ color: '#FFD700', fontSize: '14px', marginBottom: '16px', letterSpacing: '3px' }}>
+        <div style={{ color: '#FFD700', fontSize: '12px', marginBottom: '16px', letterSpacing: '3px' }}>
           🎲 SOCIAL CRAPS
         </div>
 
@@ -213,72 +226,108 @@ const CloseOutCard = ({
           width: '80px',
           height: '80px',
           borderRadius: '50%',
-          border: `3px solid ${character.borderColor}`,
+          border: `3px solid ${character?.borderColor || '#FFD700'}`,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           margin: '0 auto 8px'
         }}>
-          {character.avatar}
+          {character?.avatar}
         </div>
 
         {/* Name */}
-        <div style={{ color: 'white', fontSize: '18px', fontWeight: 'bold', marginBottom: '24px' }}>
-          {character.displayName}
+        <div style={{ color: 'white', fontSize: '18px', fontWeight: 'bold', marginBottom: '4px' }}>
+          {character?.displayName}
         </div>
+        <div style={{ color: '#888', fontSize: '12px', marginBottom: '20px' }}>
+          {isShooter ? 'Shooter' : 'Rider'}
+        </div>
+
+        {/* VIRAL HEADLINE — biggest number front and center */}
+        {isShooter && sessionStats.totalRidingOnTable > 0 && (
+          <div style={{
+            backgroundColor: '#1a1a1a',
+            borderRadius: '12px',
+            padding: '16px',
+            marginBottom: '20px',
+            border: '1px solid #FFD700'
+          }}>
+            <div style={{ color: '#FFD700', fontSize: '32px', fontWeight: 'bold' }}>
+              ${sessionStats.totalRidingOnTable.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <div style={{ color: '#888', fontSize: '12px', marginTop: '4px', letterSpacing: '1px' }}>
+              RODE ON YOUR TABLE TONIGHT
+            </div>
+          </div>
+        )}
 
         {/* Net result */}
         <div style={{
-          fontSize: '52px',
+          fontSize: '48px',
           fontWeight: 'bold',
           color: netResult >= 0 ? '#FFD700' : '#EF4444',
-          marginBottom: '8px'
+          marginBottom: '4px'
         }}>
           {netResult >= 0 ? '+' : ''}${netResult.toFixed(2)}
         </div>
-        <div style={{ color: '#888', fontSize: '13px', marginBottom: '24px' }}>
+        <div style={{ color: '#888', fontSize: '12px', marginBottom: '20px', letterSpacing: '1px' }}>
           {netResult >= 0 ? 'NET WIN' : 'NET LOSS'}
         </div>
 
-        {/* Stats grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '12px',
-          marginBottom: '24px'
-        }}>
-          <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', padding: '12px' }}>
-            <div style={{ color: '#888', fontSize: '11px' }}>TOTAL ROLLS</div>
-            <div style={{ color: 'white', fontSize: '20px', fontWeight: 'bold' }}>
-              {sessionStats.totalRolls}
-            </div>
+        {/* Stats grid — shooter */}
+        {isShooter && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr',
+            gap: '8px',
+            marginBottom: '16px'
+          }}>
+            <StatBox label='TOTAL ROLLS' value={sessionStats.totalRolls} />
+            <StatBox label='BIGGEST WIN' value={`$${sessionStats.biggestWin.toFixed(2)}`} color='#22C55E' />
+            <StatBox label='HOT STREAK' value={`${sessionStats.longestStreak} rolls`} color='#F97316' />
+            <StatBox label='TOTAL RIDERS' value={sessionStats.totalRiders} />
+            <StatBox label='BIGGEST RIDE' value={`$${sessionStats.biggestRide.toFixed(2)}`} color='#FFD700' />
+            <StatBox label='PEAK RIDING' value={`$${sessionStats.peakRidingAmount.toFixed(2)}`} color='#FFD700' />
           </div>
-          <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', padding: '12px' }}>
-            <div style={{ color: '#888', fontSize: '11px' }}>BIGGEST WIN</div>
+        )}
+
+        {/* Stats grid — rider */}
+        {!isShooter && (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '8px',
+            marginBottom: '16px'
+          }}>
+            <StatBox label='RIDING EARNED' value={`$${sessionStats.totalRidingEarned.toFixed(2)}`} color='#FFD700' />
+            <StatBox label='BIGGEST WIN' value={`$${sessionStats.biggestWin.toFixed(2)}`} color='#22C55E' />
+            <StatBox label='TOTAL ROLLS' value={sessionStats.totalRolls} />
+            <StatBox label='FINAL BALANCE' value={`$${balance.toFixed(2)}`} />
+          </div>
+        )}
+
+        {/* Rider card special headline */}
+        {!isShooter && sessionStats.totalRidingEarned > 0 && (
+          <div style={{
+            backgroundColor: '#1a1a1a',
+            borderRadius: '8px',
+            padding: '12px',
+            marginBottom: '16px',
+            border: '1px solid #22C55E'
+          }}>
             <div style={{ color: '#22C55E', fontSize: '20px', fontWeight: 'bold' }}>
-              ${sessionStats.biggestWin.toFixed(2)}
+              Turned ${(sessionStats.startingBalance).toFixed(2)} into ${balance.toFixed(2)}
             </div>
+            <div style={{ color: '#888', fontSize: '11px' }}>riding the table</div>
           </div>
-          <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', padding: '12px' }}>
-            <div style={{ color: '#888', fontSize: '11px' }}>FINAL BALANCE</div>
-            <div style={{ color: 'white', fontSize: '20px', fontWeight: 'bold' }}>
-              ${balance.toFixed(2)}
-            </div>
-          </div>
-          <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', padding: '12px' }}>
-            <div style={{ color: '#888', fontSize: '11px' }}>RIDING EARNED</div>
-            <div style={{ color: '#FFD700', fontSize: '20px', fontWeight: 'bold' }}>
-              ${sessionStats.totalRidingEarned.toFixed(2)}
-            </div>
-          </div>
-        </div>
+        )}
 
         {/* Message input */}
         <input
           type='text'
           value={message}
           onChange={(e) => setMessage(e.target.value.slice(0, 80))}
-          placeholder='Add a message...'
+          placeholder='Add a message... / Agrega un mensaje...'
           style={{
             width: '100%',
             backgroundColor: '#1a1a1a',
@@ -286,28 +335,28 @@ const CloseOutCard = ({
             borderRadius: '8px',
             padding: '10px',
             color: 'white',
-            fontSize: '14px',
+            fontSize: '13px',
             textAlign: 'center',
-            marginBottom: '24px',
+            marginBottom: '16px',
             boxSizing: 'border-box'
           }}
         />
 
-        {/* Timestamp */}
+        {/* Timestamp and branding */}
         <div style={{ color: '#444', fontSize: '11px' }}>
           {new Date().toLocaleDateString()} • socialcraps.app
         </div>
       </div>
 
-      {/* Buttons outside card (not captured) */}
+      {/* Buttons outside card (not captured by html2canvas) */}
       <div style={{
-        position: 'absolute',
-        bottom: '40px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         gap: '12px',
-        width: '380px'
+        width: '400px',
+        maxWidth: '100%',
+        marginTop: '20px'
       }}>
         {/* Save button */}
         <button
@@ -324,7 +373,7 @@ const CloseOutCard = ({
             fontSize: '15px'
           }}
         >
-          📸 Save to Camera Roll
+          📸 Save to Camera Roll / Guardar en Cámara
         </button>
 
         {/* Share buttons */}
@@ -350,20 +399,41 @@ const CloseOutCard = ({
           ))}
         </div>
 
-        {/* Skip button */}
-        <button
-          onClick={onSkip}
-          style={{
-            backgroundColor: 'transparent',
-            color: '#555',
-            border: 'none',
-            cursor: 'pointer',
-            fontSize: '13px',
-            padding: '8px'
-          }}
-        >
-          Skip and leave
-        </button>
+        {/* Keep Playing / Leave row */}
+        <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+          <button
+            onClick={onKeepPlaying}
+            style={{
+              flex: 1,
+              backgroundColor: '#22C55E',
+              color: 'white',
+              fontWeight: 'bold',
+              padding: '12px',
+              borderRadius: '8px',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            🎲 Keep Playing
+          </button>
+          <button
+            onClick={onSkip}
+            style={{
+              flex: 1,
+              backgroundColor: '#333',
+              color: '#999',
+              fontWeight: 'bold',
+              padding: '12px',
+              borderRadius: '8px',
+              border: '1px solid #444',
+              cursor: 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            Leave
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -436,11 +506,20 @@ export default function Home() {
   const activeRideRef = useRef<RideLink | null>(null);
 
   const [showCloseOut, setShowCloseOut] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [howToPlayTab, setHowToPlayTab] = useState<'rules' | 'social' | 'coming-soon'>('rules');
   const [sessionStats, setSessionStats] = useState({
     totalRolls: 0,
     biggestWin: 0,
     totalRidingEarned: 0,
-    startingBalance: 100, // Will be updated on load
+    startingBalance: 100,
+    totalWagered: 0,
+    longestStreak: 0,
+    currentStreak: 0,
+    peakRidingAmount: 0,
+    totalRiders: 0,
+    biggestRide: 0,
+    totalRidingOnTable: 0,
   });
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -1183,6 +1262,14 @@ export default function Home() {
         if (payload.eventType === 'INSERT') {
           const newRide = payload.new as RideLink;
           setAllRides(prev => [...prev, newRide]);
+          // Track rider stats for close-out card (only if rider is riding on us)
+          if (newRide.target_player_id === char.playerId) {
+            setSessionStats(prev => ({
+              ...prev,
+              totalRiders: prev.totalRiders + 1,
+              biggestRide: Math.max(prev.biggestRide, newRide.current_value),
+            }));
+          }
         }
 
         if (payload.eventType === 'DELETE') {
@@ -1612,6 +1699,15 @@ export default function Home() {
         }
       }
     }
+
+    // Track total riding volume for close-out card viral headline
+    if (netShooterChange > 0) {
+      const totalRiderWinnings = activeRides.reduce((sum, ride) => sum + (netShooterChange * ride.ride_ratio), 0);
+      setSessionStats(prev => ({
+        ...prev,
+        totalRidingOnTable: prev.totalRidingOnTable + totalRiderWinnings,
+      }));
+    }
   };
 
   const notifyRidersOfBetIncrease = async (addedAmount: number) => {
@@ -1977,6 +2073,22 @@ export default function Home() {
     }
   };
 
+  const handlePlaceRemove = (number: number) => {
+    if (phase !== 'point') return;
+    const existing = placeBets.find(b => b.number === number);
+    if (!existing || existing.amount === 0) return;
+    
+    setBalance(b => b + existing.amount);
+    setTotalBets(t => {
+      const newTotal = Math.max(0, t - existing.amount);
+      syncShooterBetsToTable(newTotal, balance + existing.amount);
+      return newTotal;
+    });
+    removeBetFromSupabase(`place-${number}`);
+    setPlaceBets(prev => prev.filter(b => b.number !== number));
+    handleBetRemoval(existing.amount, `place-${number}`);
+  };
+
   const handleBuyClick = (number: number) => {
     if (phase !== 'point') return;
     if (![4, 5, 6, 8, 9, 10].includes(number)) {
@@ -2019,6 +2131,22 @@ export default function Home() {
     }
   };
 
+  const handleBuyRemove = (number: number) => {
+    if (phase !== 'point') return;
+    const existing = buyBets.find(b => b.number === number);
+    if (!existing || existing.amount === 0) return;
+    
+    setBalance(b => b + existing.amount);
+    setTotalBets(t => {
+      const newTotal = Math.max(0, t - existing.amount);
+      syncShooterBetsToTable(newTotal, balance + existing.amount);
+      return newTotal;
+    });
+    removeBetFromSupabase(`buy-${number}`);
+    setBuyBets(prev => prev.filter(b => b.number !== number));
+    handleBetRemoval(existing.amount, `buy-${number}`);
+  };
+
   const removePassLineBet = async () => {
     setBalance(b => b + passLineBet);
     setTotalBets(t => {
@@ -2057,22 +2185,32 @@ export default function Home() {
   const handleClearAllBets = async () => {
     if (!isShooter || isRolling) return;
     
+    const isLocked = phase === 'point' && point !== null;
+    
     // Calculate total amount being removed for riders
-    let totalRemoved = passLineBet + dontPassBet + fieldBet;
+    let totalRemoved = fieldBet;
+    if (!isLocked) {
+      totalRemoved += passLineBet + dontPassBet;
+    }
+    
     totalRemoved += placeBets.reduce((acc, curr) => acc + curr.amount, 0);
     totalRemoved += buyBets.reduce((acc, curr) => acc + curr.amount, 0);
     const activeCome = comeBets.filter(b => b.point === null).reduce((acc, curr) => acc + curr.amount, 0);
     const activeDc = dontComeBets.filter(b => b.point === null).reduce((acc, curr) => acc + curr.amount, 0);
     totalRemoved += activeCome + activeDc;
 
-    // Reset totalBets to exactly 0 — don't calculate from individual bets
-    const refund = totalBets;  // capture current value
-    setTotalBets(0);           // hard reset to 0
+    // Determine what to keep
+    const remainingTotalBets = isLocked ? (passLineBet + dontPassBet) : 0;
+    const refund = totalBets - remainingTotalBets;
+    
+    setTotalBets(remainingTotalBets);
     setBalance(prev => prev + refund);
     
     // Then clear all individual bet states
-    setPassLineBet(0);
-    setDontPassBet(0);
+    if (!isLocked) {
+      setPassLineBet(0);
+      setDontPassBet(0);
+    }
     setFieldBet(0);
     setPlaceBets([]);
     setBuyBets([]);
@@ -2084,15 +2222,25 @@ export default function Home() {
       setDpWinPulse(false);
     }
     
-    // Delete all from supabase
-    await supabase
-      .from('craps_bets')
-      .delete()
-      .eq('table_code', code)
-      .eq('player_id', character?.playerId);
+    // Delete from supabase
+    if (!isLocked) {
+      await supabase
+        .from('craps_bets')
+        .delete()
+        .eq('table_code', code)
+        .eq('player_id', character?.playerId);
+    } else {
+      await supabase
+        .from('craps_bets')
+        .delete()
+        .eq('table_code', code)
+        .eq('player_id', character?.playerId)
+        .neq('bet_type', 'pass-line')
+        .neq('bet_type', 'dont-pass');
+    }
       
     // Sync to Supabase
-    await syncShooterBetsToTable(0, balance + refund);
+    await syncShooterBetsToTable(remainingTotalBets, balance + refund);
 
     if (totalRemoved > 0) {
       await handleBetRemoval(totalRemoved, 'all');
@@ -2517,7 +2665,11 @@ export default function Home() {
       setSessionStats(prev => ({
         ...prev,
         totalRolls: prev.totalRolls + 1,
-        biggestWin: Math.max(prev.biggestWin, rollWin)
+        biggestWin: Math.max(prev.biggestWin, rollWin),
+        totalWagered: prev.totalWagered + totalBets,
+        currentStreak: rollWin > 0 ? prev.currentStreak + 1 : 0,
+        longestStreak: Math.max(prev.longestStreak, rollWin > 0 ? prev.currentStreak + 1 : prev.longestStreak),
+        peakRidingAmount: Math.max(prev.peakRidingAmount, totalRiding),
       }));
 
       
@@ -2851,6 +3003,9 @@ export default function Home() {
               </div>
             )}
           </div>
+          <button onClick={() => { setHowToPlayTab('rules'); setShowHowToPlay(true); }} className="bg-blue-900/50 hover:bg-blue-800 text-blue-200 px-3 py-1.5 rounded text-sm font-bold shadow transition-colors border border-blue-900/50">
+            ❓
+          </button>
           <button onClick={() => setShowCloseOut(true)} className="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-1.5 rounded text-sm font-bold shadow transition-colors border border-red-900/50">
             {lang === 'en' ? 'Leave' : 'Salir'}
           </button>
@@ -2888,9 +3043,195 @@ export default function Home() {
           balance={balance}
           sessionStats={sessionStats}
           activeRide={activeRide}
+          isShooter={isShooter}
           onSave={() => {}}
           onSkip={handleLeaveTable}
+          onKeepPlaying={() => setShowCloseOut(false)}
         />
+      )}
+
+      {/* How to Play Modal */}
+      {showHowToPlay && (
+        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4" onClick={() => setShowHowToPlay(false)}>
+          <div className="bg-[#111] border border-white/10 rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col animate-overlay-in" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-white/10">
+              <h2 className="text-xl font-black text-white tracking-wide">
+                {lang === 'en' ? '🎲 How to Play' : '🎲 Cómo Jugar'}
+              </h2>
+              <button onClick={() => setShowHowToPlay(false)} className="text-gray-500 hover:text-white text-2xl font-bold transition-colors">✕</button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-white/10">
+              {[
+                { key: 'rules' as const, label: lang === 'en' ? '📖 Rules' : '📖 Reglas' },
+                { key: 'social' as const, label: lang === 'en' ? '🤝 Social' : '🤝 Social' },
+                { key: 'coming-soon' as const, label: '🚀 Coming Soon' },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setHowToPlayTab(tab.key)}
+                  className={`flex-1 py-3 text-sm font-bold transition-colors ${
+                    howToPlayTab === tab.key 
+                      ? 'text-yellow-400 border-b-2 border-yellow-400 bg-white/5' 
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 text-sm">
+              {/* RULES TAB */}
+              {howToPlayTab === 'rules' && (
+                <>
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                    <h3 className="text-yellow-400 font-bold text-base mb-2">{lang === 'en' ? 'Crapless Craps' : 'Craps Sin Pérdida'}</h3>
+                    <p className="text-gray-300 leading-relaxed">
+                      {lang === 'en' 
+                        ? 'Unlike standard craps, there are no "craps" numbers. The numbers 2, 3, 11, and 12 become point numbers instead of instant wins/losses. Only 7 loses on the come-out roll.'
+                        : 'A diferencia del craps estándar, no hay números "craps". Los números 2, 3, 11 y 12 se convierten en puntos en lugar de ganancias/pérdidas instantáneas. Solo el 7 pierde en el tiro de salida.'}
+                    </p>
+                  </div>
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                    <h3 className="text-blue-400 font-bold text-base mb-2">{lang === 'en' ? 'Pass Line' : 'Línea de Pase'}</h3>
+                    <p className="text-gray-300 leading-relaxed">
+                      {lang === 'en'
+                        ? 'Bet on the shooter to win. On come-out, 7 or 11 wins. Any other number sets the point. Hit the point before rolling 7 to win.'
+                        : 'Apuesta a que el tirador gane. En la salida, 7 u 11 gana. Cualquier otro número establece el punto. Saca el punto antes de tirar 7 para ganar.'}
+                    </p>
+                  </div>
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                    <h3 className="text-red-400 font-bold text-base mb-2">{lang === 'en' ? "Don't Pass" : 'No Pase'}</h3>
+                    <p className="text-gray-300 leading-relaxed">
+                      {lang === 'en'
+                        ? 'Bet against the shooter. On come-out, 7 loses. Point phase: 7 before the point wins.'
+                        : 'Apuesta contra el tirador. En la salida, 7 pierde. Fase de punto: 7 antes del punto gana.'}
+                    </p>
+                  </div>
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                    <h3 className="text-green-400 font-bold text-base mb-2">{lang === 'en' ? 'Place & Buy Bets' : 'Apuestas Place y Buy'}</h3>
+                    <p className="text-gray-300 leading-relaxed">
+                      {lang === 'en'
+                        ? 'Place bets on specific numbers during point phase. Click a number zone with a chip selected to bet. Click the chip stack directly to remove. Buy bets pay true odds minus 5% commission.'
+                        : 'Apuestas Place en números específicos durante la fase de punto. Haz clic en una zona con una ficha seleccionada para apostar. Haz clic directamente en la pila de fichas para remover. Las apuestas Buy pagan probabilidades reales menos 5% de comisión.'}
+                    </p>
+                  </div>
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                    <h3 className="text-orange-400 font-bold text-base mb-2">{lang === 'en' ? 'Come & Don\'t Come' : 'Come y No Come'}</h3>
+                    <p className="text-gray-300 leading-relaxed">
+                      {lang === 'en'
+                        ? 'Like Pass/Don\'t Pass but placed during point phase. Your come bet travels to the rolled number and works like a mini pass-line for that number.'
+                        : 'Como Pase/No Pase pero se coloca durante la fase de punto. Tu apuesta Come viaja al número tirado y funciona como una mini línea de pase para ese número.'}
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {/* SOCIAL TAB */}
+              {howToPlayTab === 'social' && (
+                <>
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                    <h3 className="text-yellow-400 font-bold text-base mb-2">🎿 {lang === 'en' ? 'Ride With Me' : 'Acompáñame'}</h3>
+                    <p className="text-gray-300 leading-relaxed">
+                      {lang === 'en'
+                        ? 'Rail players can "ride" on the shooter\'s bets. Place a stake on the shooter and earn proportional winnings when they win. Losses reduce your stake. When your stake hits 0, the ride ends.'
+                        : 'Los jugadores de baranda pueden "montar" las apuestas del tirador. Coloca una apuesta en el tirador y gana proporcional cuando ganen. Las pérdidas reducen tu apuesta. Cuando llega a 0, el viaje termina.'}
+                    </p>
+                  </div>
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                    <h3 className="text-green-400 font-bold text-base mb-2">🗺️ {lang === 'en' ? 'Heatmap' : 'Mapa de Calor'}</h3>
+                    <p className="text-gray-300 leading-relaxed">
+                      {lang === 'en'
+                        ? 'Rail players can suggest bets by clicking zones on the table. The shooter sees colored overlays showing where people want bets placed. Green = bet, Red = pull.'
+                        : 'Los jugadores de baranda pueden sugerir apuestas haciendo clic en zonas de la mesa. El tirador ve superposiciones de color mostrando dónde la gente quiere apuestas. Verde = apostar, Rojo = quitar.'}
+                    </p>
+                  </div>
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                    <h3 className="text-blue-400 font-bold text-base mb-2">🎤 {lang === 'en' ? 'Voice Chat' : 'Chat de Voz'}</h3>
+                    <p className="text-gray-300 leading-relaxed">
+                      {lang === 'en'
+                        ? 'Table-level players (Tier 1) have live voice chat through LiveKit. Communicate strategy in real time. Rail and guest players can text chat.'
+                        : 'Los jugadores de mesa (Nivel 1) tienen chat de voz en vivo por LiveKit. Comunica estrategia en tiempo real. Jugadores de baranda e invitados pueden chatear por texto.'}
+                    </p>
+                  </div>
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-white/5">
+                    <h3 className="text-purple-400 font-bold text-base mb-2">📸 {lang === 'en' ? 'Close Out Card' : 'Tarjeta de Cierre'}</h3>
+                    <p className="text-gray-300 leading-relaxed">
+                      {lang === 'en'
+                        ? 'When you leave, get a shareable receipt of your session — net result, total rolls, biggest win, riding stats. Save it and share on social media!'
+                        : 'Cuando te vas, obtén un recibo compartible de tu sesión — resultado neto, tiros totales, mayor ganancia, estadísticas de viaje. ¡Guárdalo y compártelo en redes sociales!'}
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {/* COMING SOON TAB */}
+              {howToPlayTab === 'coming-soon' && (
+                <>
+                  <div className="text-center mb-2">
+                    <div className="text-yellow-400 text-lg font-black tracking-wider">🚀 COMING SOON</div>
+                    <div className="text-gray-500 text-xs">PRÓXIMAMENTE</div>
+                  </div>
+
+                  {/* Pass the Dice */}
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-yellow-500/20 relative">
+                    <div className="absolute top-3 right-3 bg-green-500/10 text-green-400 text-[9px] font-bold px-2 py-0.5 rounded-full border border-green-500/30">IN DEVELOPMENT</div>
+                    <div className="text-2xl mb-2">🎲</div>
+                    <h3 className="text-yellow-400 font-bold text-base mb-2">Pass the Dice</h3>
+                    <ul className="text-gray-400 text-sm space-y-1 leading-relaxed">
+                      <li>When the shooter is done they can hand off to the next player.</li>
+                      <li>All active rides cash out automatically on handoff.</li>
+                      <li>First person to click &apos;I&apos;ll Shoot&apos; takes the dice.</li>
+                    </ul>
+                  </div>
+
+                  {/* Gift to Shooter */}
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-yellow-500/20 relative">
+                    <div className="absolute top-3 right-3 bg-green-500/10 text-green-400 text-[9px] font-bold px-2 py-0.5 rounded-full border border-green-500/30">IN DEVELOPMENT</div>
+                    <div className="text-2xl mb-2">🎁</div>
+                    <h3 className="text-yellow-400 font-bold text-base mb-2">Gift to Shooter</h3>
+                    <ul className="text-gray-400 text-sm space-y-1 leading-relaxed">
+                      <li>Rail players can send chips directly to a hot shooter.</li>
+                      <li>Keep them rolling longer.</li>
+                      <li>The bigger your ride, the more incentive to keep them going.</li>
+                      <li>&apos;Send $50&apos; appears as a toast on the shooter&apos;s screen.</li>
+                    </ul>
+                  </div>
+
+                  {/* Leaderboards */}
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-yellow-500/20 relative">
+                    <div className="absolute top-3 right-3 bg-green-500/10 text-green-400 text-[9px] font-bold px-2 py-0.5 rounded-full border border-green-500/30">IN DEVELOPMENT</div>
+                    <div className="text-2xl mb-2">🏆</div>
+                    <h3 className="text-yellow-400 font-bold text-base mb-2">Leaderboards</h3>
+                    <ul className="text-gray-400 text-sm space-y-1 leading-relaxed">
+                      <li>Top tables by total riding volume this week.</li>
+                      <li>Weekly rankings updated in real time.</li>
+                      <li>Verified whale badges for high-volume riders.</li>
+                      <li>Most viral Close Out cards of the week.</li>
+                    </ul>
+                  </div>
+
+                  {/* Mobile App */}
+                  <div className="bg-[#1a1a1a] rounded-xl p-4 border border-yellow-500/20 relative">
+                    <div className="absolute top-3 right-3 bg-green-500/10 text-green-400 text-[9px] font-bold px-2 py-0.5 rounded-full border border-green-500/30">IN DEVELOPMENT</div>
+                    <div className="text-2xl mb-2">📱</div>
+                    <h3 className="text-yellow-400 font-bold text-base mb-2">Mobile App</h3>
+                    <ul className="text-gray-400 text-sm space-y-1 leading-relaxed">
+                      <li>Native iOS and Android experience.</li>
+                      <li>Push notifications when your favorite shooter goes live.</li>
+                      <li>&apos;Your rider just pulled out — come back!&apos; alerts.</li>
+                      <li>One tap to jump back into a live table.</li>
+                    </ul>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Connection Toasts */}
@@ -3107,7 +3448,7 @@ export default function Home() {
                      {displayState.placeBets.filter(b => b.number === col.val).map((bet) => (
                         <div key={bet.id} onClick={(e) => {
                              e.stopPropagation();
-                             handlePlaceClick(col.val);
+                             handlePlaceRemove(col.val);
                         }} className={`pointer-events-auto flex items-center gap-1 bg-blue-600 border border-white/50 rounded-full px-1.5 py-0.5 shadow-lg cursor-pointer hover:-translate-y-0.5 relative`}>
                            <span className="text-[7px] font-black text-blue-900 bg-white/90 rounded-full w-3.5 h-3.5 flex items-center justify-center">P</span>
                            <span className="text-[9px] font-bold text-white pr-0.5">${bet.amount}</span>
@@ -3123,7 +3464,7 @@ export default function Home() {
                      {displayState.buyBets.filter(b => b.number === col.val).map((bet) => (
                         <div key={bet.id} onClick={(e) => {
                              e.stopPropagation();
-                             handleBuyClick(col.val);
+                             handleBuyRemove(col.val);
                         }} className={`pointer-events-auto flex items-center gap-1 bg-teal-600 border border-white/50 rounded-full px-1.5 py-0.5 shadow-lg cursor-pointer hover:-translate-y-0.5 relative`}>
                            <span className="text-[7px] font-black text-teal-900 bg-white/90 rounded-full w-3.5 h-3.5 flex items-center justify-center">B</span>
                            <span className="text-[9px] font-bold text-white pr-0.5">${bet.amount}</span>
