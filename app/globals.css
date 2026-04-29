@@ -2,26 +2,227 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    box-sizing: border-box;
   }
-}
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    margin: 0;
+    padding: 0;
+    background: #0a0a0a;
+    color: white;
+    font-family: 'Arial Narrow', Arial, sans-serif;
+    overflow: hidden;
+    height: 100dvh;
+    width: 100vw;
+  }
+
+  html {
+    height: 100%;
+  }
 }
 
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
+  /* Felt texture overlay */
+  .felt {
+    background-color: #1a5c2a;
+    background-image:
+      radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.03) 0%, transparent 70%),
+      repeating-linear-gradient(
+        45deg,
+        rgba(0,0,0,0.04) 0px,
+        rgba(0,0,0,0.04) 1px,
+        transparent 1px,
+        transparent 4px
+      );
+  }
+
+  .felt-hover:hover {
+    background-color: #226b34;
+    transition: background-color 0.15s ease;
+  }
+
+  .bet-zone {
+    cursor: pointer;
+    border: 1px solid rgba(255, 215, 0, 0.35);
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .bet-zone:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 215, 0, 0.65);
+  }
+
+  .gold-border {
+    border: 2px solid #b8860b;
+  }
+
+  .gold-text {
+    color: #ffd700;
+  }
+
+  .table-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #ffd700;
+    text-align: center;
+    line-height: 1.1;
+  }
+
+  .payout-label {
+    font-size: 0.5rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #ffffffcc;
+    text-align: center;
+  }
+
+  .number-cell {
+    font-size: 1.1rem;
+    font-weight: 900;
+    letter-spacing: 0.02em;
+    color: white;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+
+  /* Casino chip styles */
+  .chip {
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: 0.55rem;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.2);
+    border: 3px solid rgba(255,255,255,0.3);
+    position: relative;
+    user-select: none;
+  }
+
+  .chip::before {
+    content: '';
+    position: absolute;
+    inset: 3px;
+    border-radius: 50%;
+    border: 2px dashed rgba(255,255,255,0.35);
+  }
+
+  .chip:hover {
+    transform: translateY(-2px) scale(1.08);
+    box-shadow: 0 5px 12px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.2);
+  }
+
+  .chip:active {
+    transform: translateY(0) scale(0.97);
+  }
+
+  .puck-off {
+    background: radial-gradient(circle at 35% 35%, #555, #111);
+    border: 3px solid #888;
+    color: #ccc;
+  }
+
+  .puck-on {
+    background: radial-gradient(circle at 35% 35%, #ffffff, #cccccc);
+    border: 3px solid #ffd700;
+    color: #111;
+  }
+
+  /* Dice pip grid */
+  .die-face {
+    display: grid;
+    grid-template-areas:
+      "a b c"
+      "d e f"
+      "g h i";
+    gap: 2px;
+    padding: 3px;
+  }
+
+  .pip {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: white;
   }
 }
+
+/* ── Phase 2: Dice Roll Animations ───────────────────────── */
+
+@keyframes diceRoll {
+  0%   { transform: rotate(0deg)    scale(1);    }
+  15%  { transform: rotate(180deg)  scale(1.05); }
+  30%  { transform: rotate(90deg)   scale(0.95); }
+  45%  { transform: rotate(270deg)  scale(1.1);  }
+  60%  { transform: rotate(45deg)   scale(1);    }
+  75%  { transform: rotate(315deg)  scale(1.05); }
+  90%  { transform: rotate(135deg)  scale(0.98); }
+  100% { transform: rotate(360deg)  scale(1);    }
+}
+
+@keyframes diceRoll2 {
+  0%   { transform: rotate(0deg)    scale(0.95); }
+  20%  { transform: rotate(-120deg) scale(1.1);  }
+  40%  { transform: rotate(200deg)  scale(1);    }
+  60%  { transform: rotate(-80deg)  scale(1.05); }
+  80%  { transform: rotate(280deg)  scale(0.97); }
+  100% { transform: rotate(360deg)  scale(1);    }
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes diceAppear {
+  from { transform: scale(0.3) rotate(-30deg); opacity: 0; }
+  to   { transform: scale(1)   rotate(0deg);   opacity: 1; }
+}
+
+@keyframes diceSettle {
+  0%   { transform: scale(1)    rotate(0deg);  }
+  30%  { transform: scale(1.06) rotate(4deg);  }
+  60%  { transform: scale(0.97) rotate(-2deg); }
+  100% { transform: scale(1)    rotate(0deg);  }
+}
+
+@keyframes diceFly {
+  0%   { transform: scale(1)   translateY(0);    opacity: 1; }
+  60%  { transform: scale(0.5) translateY(40px); opacity: 0.9; }
+  100% { transform: scale(0)   translateY(80px); opacity: 0; }
+}
+
+@keyframes diceLand {
+  0%   { transform: scale(0)    rotate(30deg);  opacity: 0; }
+  70%  { transform: scale(1.15) rotate(-3deg);  opacity: 1; }
+  85%  { transform: scale(0.92) rotate(1deg);   }
+  100% { transform: scale(1)    rotate(0deg);   opacity: 1; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+
+@keyframes pulseGold {
+  0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.8); }
+  70% { box-shadow: 0 0 0 15px rgba(250, 204, 21, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+}
+
+.animate-pulse-gold   { animation: pulseGold   1.5s infinite; }
+.animate-dice-roll    { animation: diceRoll    0.45s ease-in-out infinite; }
+.animate-dice-roll-2  { animation: diceRoll2   0.4s  ease-in-out infinite; }
+.animate-dice-appear  { animation: diceAppear  0.3s  ease-out     forwards; }
+.animate-dice-settle  { animation: diceSettle  0.4s  ease-out     forwards; }
+.animate-dice-fly     { animation: diceFly     0.5s  ease-in      forwards; }
+.animate-dice-land    { animation: diceLand    0.45s cubic-bezier(0.22,1,0.36,1) forwards; }
+.animate-overlay-in   { animation: overlayIn   0.2s  ease-out     forwards; }
