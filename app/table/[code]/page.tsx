@@ -2,13 +2,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { HEATMAP_ZONES, HeatmapZone, ZoneHeatmap, HeatmapSuggestion } from '@/lib/utils';
 import { PlayerAvatar, Player } from '@/app/components/PlayerAvatar';
 import { LiveKitRoom, RoomAudioRenderer, useParticipants, ParticipantTile, TrackToggle } from '@livekit/components-react';
 import { ChatSidebar } from '@/app/components/ChatSidebar';
+import { ZoneOverlay } from '@/components/ZoneOverlay';
+
 interface SpeechBubble {
   playerId: string;
   message: string;
   timestamp: number;
+}
+
+interface RideLink {
+  id: string;
+  table_code: string;
+  rider_id: string;
+  target_player_id: string;
+  initial_stake: number;
+  current_value: number;
+  ride_ratio: number;
+  status: 'active' | 'stopped' | 'completed';
+  updated_at: string;
 }
 
 const LiveTableAvatar = (props: React.ComponentProps<typeof PlayerAvatar>) => {
@@ -134,6 +149,226 @@ const BUY_PAYOUTS: Record<number, [number, number]> = {
   8: [6, 5], 9: [3, 2], 10: [2, 1]
 };
 
+const CloseOutCard = ({ 
+  character,
+  balance,
+  sessionStats,
+  activeRide,
+  onSave,
+  onSkip
+}: any) => {
+  const [message, setMessage] = useState('');
+  const cardRef = useRef<HTMLDivElement>(null);
+  const netResult = balance - sessionStats.startingBalance;
+
+  const saveToCamera = async () => {
+    if (!cardRef.current) return;
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const canvas = await html2canvas(cardRef.current, {
+        backgroundColor: '#0a0a0a',
+        scale: 2
+      });
+      const link = document.createElement('a');
+      link.download = `social-craps-${Date.now()}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      onSave?.();
+    } catch (err) {
+      console.error('Failed to capture screen:', err);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      backgroundColor: 'rgba(0,0,0,0.95)',
+      zIndex: 100,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    }}>
+      {/* The card — this gets captured by html2canvas */}
+      <div
+        ref={cardRef}
+        style={{
+          backgroundColor: '#111',
+          border: '2px solid #FFD700',
+          borderRadius: '16px',
+          padding: '32px',
+          width: '380px',
+          textAlign: 'center',
+          fontFamily: 'Arial, sans-serif'
+        }}
+      >
+        {/* Logo */}
+        <div style={{ color: '#FFD700', fontSize: '14px', marginBottom: '16px', letterSpacing: '3px' }}>
+          🎲 SOCIAL CRAPS
+        </div>
+
+        {/* Avatar */}
+        <div style={{
+          fontSize: '48px',
+          width: '80px',
+          height: '80px',
+          borderRadius: '50%',
+          border: `3px solid ${character.borderColor}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          margin: '0 auto 8px'
+        }}>
+          {character.avatar}
+        </div>
+
+        {/* Name */}
+        <div style={{ color: 'white', fontSize: '18px', fontWeight: 'bold', marginBottom: '24px' }}>
+          {character.displayName}
+        </div>
+
+        {/* Net result */}
+        <div style={{
+          fontSize: '52px',
+          fontWeight: 'bold',
+          color: netResult >= 0 ? '#FFD700' : '#EF4444',
+          marginBottom: '8px'
+        }}>
+          {netResult >= 0 ? '+' : ''}${netResult.toFixed(2)}
+        </div>
+        <div style={{ color: '#888', fontSize: '13px', marginBottom: '24px' }}>
+          {netResult >= 0 ? 'NET WIN' : 'NET LOSS'}
+        </div>
+
+        {/* Stats grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '12px',
+          marginBottom: '24px'
+        }}>
+          <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ color: '#888', fontSize: '11px' }}>TOTAL ROLLS</div>
+            <div style={{ color: 'white', fontSize: '20px', fontWeight: 'bold' }}>
+              {sessionStats.totalRolls}
+            </div>
+          </div>
+          <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ color: '#888', fontSize: '11px' }}>BIGGEST WIN</div>
+            <div style={{ color: '#22C55E', fontSize: '20px', fontWeight: 'bold' }}>
+              ${sessionStats.biggestWin.toFixed(2)}
+            </div>
+          </div>
+          <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ color: '#888', fontSize: '11px' }}>FINAL BALANCE</div>
+            <div style={{ color: 'white', fontSize: '20px', fontWeight: 'bold' }}>
+              ${balance.toFixed(2)}
+            </div>
+          </div>
+          <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', padding: '12px' }}>
+            <div style={{ color: '#888', fontSize: '11px' }}>RIDING EARNED</div>
+            <div style={{ color: '#FFD700', fontSize: '20px', fontWeight: 'bold' }}>
+              ${sessionStats.totalRidingEarned.toFixed(2)}
+            </div>
+          </div>
+        </div>
+
+        {/* Message input */}
+        <input
+          type='text'
+          value={message}
+          onChange={(e) => setMessage(e.target.value.slice(0, 80))}
+          placeholder='Add a message...'
+          style={{
+            width: '100%',
+            backgroundColor: '#1a1a1a',
+            border: '1px solid #333',
+            borderRadius: '8px',
+            padding: '10px',
+            color: 'white',
+            fontSize: '14px',
+            textAlign: 'center',
+            marginBottom: '24px',
+            boxSizing: 'border-box'
+          }}
+        />
+
+        {/* Timestamp */}
+        <div style={{ color: '#444', fontSize: '11px' }}>
+          {new Date().toLocaleDateString()} • socialcraps.app
+        </div>
+      </div>
+
+      {/* Buttons outside card (not captured) */}
+      <div style={{
+        position: 'absolute',
+        bottom: '40px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '12px',
+        width: '380px'
+      }}>
+        {/* Save button */}
+        <button
+          onClick={saveToCamera}
+          style={{
+            width: '100%',
+            backgroundColor: '#FFD700',
+            color: '#000',
+            fontWeight: 'bold',
+            padding: '14px',
+            borderRadius: '8px',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '15px'
+          }}
+        >
+          📸 Save to Camera Roll
+        </button>
+
+        {/* Share buttons */}
+        <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+          {['Twitter/X', 'Instagram', 'WhatsApp', 'Facebook'].map(platform => (
+            <button
+              key={platform}
+              onClick={saveToCamera}
+              title='Save the image and share manually'
+              style={{
+                flex: 1,
+                backgroundColor: '#1a1a1a',
+                color: '#888',
+                padding: '8px 4px',
+                borderRadius: '6px',
+                border: '1px solid #333',
+                cursor: 'pointer',
+                fontSize: '10px'
+              }}
+            >
+              {platform}
+            </button>
+          ))}
+        </div>
+
+        {/* Skip button */}
+        <button
+          onClick={onSkip}
+          style={{
+            backgroundColor: 'transparent',
+            color: '#555',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: '13px',
+            padding: '8px'
+          }}
+        >
+          Skip and leave
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export default function Home() {
   const { code } = useParams();
   const router = useRouter();
@@ -181,14 +416,80 @@ export default function Home() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [speechBubbles, setSpeechBubbles] = useState<SpeechBubble[]>([]);
   const [lkToken, setLkToken] = useState<string | null>(null);
+  const heatmapProcessing = useRef<Set<string>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isChatOpenRef = useRef(isChatOpen);
+  const roomRef = useRef<any>(null);
+
+  const [heatmap, setHeatmap] = useState<Record<string, ZoneHeatmap>>({});
+  const [mySuggestions, setMySuggestions] = useState<Record<string, 'bet' | 'pull'>>({});
+  const [allSuggestions, setAllSuggestions] = useState<HeatmapSuggestion[]>([]);
+
+  // Ride state
+  const [activeRide, setActiveRide] = useState<RideLink | null>(null);
+  const [allRides, setAllRides] = useState<RideLink[]>([]);
+  const [showRideModal, setShowRideModal] = useState(false);
+  const [showAddToRideModal, setShowAddToRideModal] = useState(false);
+  const [pendingRideAdd, setPendingRideAdd] = useState(0);
+  const [rideStake, setRideStake] = useState<string>('');
+  const [rideChangeNotification, setRideChangeNotification] = useState<number | null>(null);
+  const activeRideRef = useRef<RideLink | null>(null);
+
+  const [showCloseOut, setShowCloseOut] = useState(false);
+  const [sessionStats, setSessionStats] = useState({
+    totalRolls: 0,
+    biggestWin: 0,
+    totalRidingEarned: 0,
+    startingBalance: 100, // Will be updated on load
+  });
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { pointRef.current = point; }, [point]);
   useEffect(() => { die1Ref.current = die1; }, [die1]);
   useEffect(() => { die2Ref.current = die2; }, [die2]);
   useEffect(() => { isChatOpenRef.current = isChatOpen; }, [isChatOpen]);
+  useEffect(() => { roomRef.current = room; }, [room]);
+  useEffect(() => { activeRideRef.current = activeRide; }, [activeRide]);
+
+  const prevShooterBet = useRef(totalBets);
+  useEffect(() => {
+    if (isShooter && totalBets > prevShooterBet.current) {
+      const added = totalBets - prevShooterBet.current;
+      notifyRidersOfBetIncrease(added);
+    }
+    prevShooterBet.current = totalBets;
+  }, [totalBets, isShooter]);
+
+  // Log heatmap state after every update
+  useEffect(() => {
+    console.log('Current heatmap:', JSON.stringify(heatmap, null, 2));
+    console.log('My suggestions:', mySuggestions);
+    console.log('Total suggestions:', allSuggestions.length);
+  }, [heatmap, mySuggestions, allSuggestions.length]);
+
+  useEffect(() => {
+    if (!character?.playerId) return;
+    const mine = allSuggestions.filter(s => s.participant_id === character.playerId);
+    const map: Record<string, 'bet' | 'pull'> = {};
+    mine.forEach(s => { map[s.zone] = s.signal; });
+    setMySuggestions(map);
+  }, [allSuggestions, character?.playerId]);
+
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      // Resume AudioContext on first user interaction
+      if (typeof window !== 'undefined') {
+        const AudioContext = window.AudioContext || (window as any).webkitAudioContext
+        if (AudioContext) {
+          const ctx = new AudioContext()
+          ctx.resume()
+        }
+      }
+      document.removeEventListener('click', handleFirstInteraction)
+    }
+    document.addEventListener('click', handleFirstInteraction)
+    return () => document.removeEventListener('click', handleFirstInteraction)
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -197,6 +498,47 @@ export default function Home() {
   useEffect(() => {
     if (isChatOpen) setUnreadCount(0);
   }, [isChatOpen]);
+
+  const calculateHeatmap = (
+    suggestions: HeatmapSuggestion[],
+    connectedPlayers: typeof players,
+    shooterId: string
+  ): Record<string, ZoneHeatmap> => {
+
+    // Count ONLY connected non-shooter players
+    const eligibleParticipants = connectedPlayers.filter(p =>
+      p.player_id !== shooterId &&
+      p.is_connected === true
+    );
+    
+    const totalParticipants = eligibleParticipants.length;
+    
+    console.log('Heatmap calculation:');
+    console.log('Total connected players:', connectedPlayers.length);
+    console.log('Shooter ID:', shooterId);
+    console.log('Eligible participants (non-shooter):', totalParticipants);
+    console.log('Total suggestion rows:', suggestions.length);
+
+    if (totalParticipants === 0) return {};
+
+    const newHeatmap: Record<string, ZoneHeatmap> = {};
+
+    for (const zone of HEATMAP_ZONES) {
+      const zoneSuggestions = suggestions.filter(s => s.zone === zone);
+      const betCount = zoneSuggestions.filter(s => s.signal === 'bet').length;
+      const pullCount = zoneSuggestions.filter(s => s.signal === 'pull').length;
+
+      if (betCount > 0 || pullCount > 0) {
+        newHeatmap[zone] = {
+          betPercent: Math.round((betCount / totalParticipants) * 100),
+          pullPercent: Math.round((pullCount / totalParticipants) * 100),
+          totalVoters: betCount + pullCount
+        };
+      }
+    }
+
+    return newHeatmap;
+  };
 
   const postGameEvent = async (msg: string) => {
     await supabase.from('craps_messages').insert({
@@ -266,40 +608,58 @@ export default function Home() {
         .select('*')
         .eq('table_code', code);
 
-      let currentPlayers = playersData ?? [];
+      // Deduplicate by player_id keeping most recent
+      let currentPlayers = playersData?.reduce((acc, player) => {
+        const existing = acc.find(p => p.player_id === player.player_id);
+        if (!existing) {
+          acc.push(player);
+        }
+        return acc;
+      }, [] as Player[]) ?? [];
+
       const existingPlayer = currentPlayers.find(p => p.player_id === char.playerId);
       const shooter = roomData.current_shooter_id === char.playerId;
       
       let assignedTier: 1 | 2 | 3 = 3;
-
-      if (!existingPlayer) {
-        // Player not in DB, determine tier and insert
-        const access = searchParams.get('access');
+      const access = searchParams.get('access');
+      
+      if (existingPlayer) {
+        assignedTier = existingPlayer.tier as 1 | 2 | 3;
+      } else {
         assignedTier = shooter ? 1 : (access === 'closefriend' ? 1 : (access === 'friend' ? 2 : 3));
-        
-        const { error } = await supabase.from('craps_players').insert({
+      }
+
+      // Use upsert to handle both new joins and rejoin scenarios
+      const { error } = await supabase
+        .from('craps_players')
+        .upsert({
           table_code: code,
           player_id: char.playerId,
           display_name: char.displayName,
           avatar: char.avatar,
           border_color: char.borderColor,
           tier: assignedTier,
-          balance: 100.00,
+          balance: existingPlayer ? existingPlayer.balance : 100.00,
           is_connected: true,
-          seat_number: assignedTier === 1 ? currentPlayers.filter(p => p.tier === 1).length + 1 : null
+          seat_number: existingPlayer?.seat_number || (assignedTier === 1 ? currentPlayers.filter(p => p.tier === 1).length + 1 : null)
+        }, { 
+          onConflict: 'table_code,player_id'
         });
-        
-        if (!error) {
-          const { data: newPlayers } = await supabase.from('craps_players').select('*').eq('table_code', code);
-          if (newPlayers) currentPlayers = newPlayers;
-        }
-      } else {
-        assignedTier = existingPlayer.tier as 1 | 2 | 3;
-        await supabase
-          .from('craps_players')
-          .update({ is_connected: true })
-          .eq('table_code', code)
-          .eq('player_id', char.playerId);
+
+      if (error) console.error('Join error:', error.message);
+
+      // Set initial balance and starting balance for stats
+      const initialBal = existingPlayer ? existingPlayer.balance : 100.00;
+      setBalance(initialBal);
+      setSessionStats(prev => ({ ...prev, startingBalance: initialBal }));
+
+      const { data: newPlayersData } = await supabase.from('craps_players').select('*').eq('table_code', code);
+      if (newPlayersData) {
+        currentPlayers = newPlayersData.reduce((acc, player) => {
+          const existing = acc.find(p => p.player_id === player.player_id);
+          if (!existing) acc.push(player);
+          return acc;
+        }, [] as Player[]);
       }
 
       if (roomData) {
@@ -326,36 +686,50 @@ export default function Home() {
       playersRef.current = currentPlayers;
       setIsShooter(shooter);
 
-      if (!shooter && roomData) {
+      if (roomData) {
         const { data: bets } = await supabase
           .from('craps_bets')
           .select('*')
           .eq('table_code', code)
           .eq('status', 'active');
         if (bets) {
-          setDisplayState({
-            passLineBet: bets.find(b => b.bet_type === 'pass-line')?.amount ?? 0,
-            dontPassBet: bets.find(b => b.bet_type === 'dont-pass')?.amount ?? 0,
-            fieldBet: bets.find(b => b.bet_type === 'field')?.amount ?? 0,
-            placeBets: bets.filter(b => b.bet_type.startsWith('place-'))
-              .map(b => ({ id: Math.random().toString(), number: parseInt(b.bet_type.split('-')[1]), amount: b.amount })),
-            buyBets: bets.filter(b => b.bet_type.startsWith('buy-'))
-              .map(b => ({ id: Math.random().toString(), number: parseInt(b.bet_type.split('-')[1]), amount: b.amount })),
-            comeBets: bets.filter(b => b.bet_type === 'come' || b.bet_type.startsWith('come-'))
-              .map(b => ({ id: Math.random().toString(), point: b.point, amount: b.amount })),
-            dontComeBets: bets.filter(b => b.bet_type === 'dont-come' || b.bet_type.startsWith('dont-come-'))
-              .map(b => ({ id: Math.random().toString(), point: b.point, amount: b.amount })),
-            passOddsBet: bets.find(b => b.bet_type === 'pass-odds')?.amount ?? 0,
-            dontPassOddsBet: bets.find(b => b.bet_type === 'dont-odds')?.amount ?? 0,
-            phase: roomData.phase,
-            point: roomData.point,
-            puckIsOn: roomData.phase === 'point' && roomData.point !== null,
-            shooterBalance: roomData.shooter_balance ?? 100,
-            shooterBet: roomData.shooter_total_bet ?? 0,
-            lastWin: roomData.last_win ?? 0,
-            lastRollDie1: roomData.last_roll_die1,
-            lastRollDie2: roomData.last_roll_die2,
-          });
+          if (!shooter) {
+            setDisplayState({
+              passLineBet: bets.find(b => b.bet_type === 'pass-line')?.amount ?? 0,
+              dontPassBet: bets.find(b => b.bet_type === 'dont-pass')?.amount ?? 0,
+              fieldBet: bets.find(b => b.bet_type === 'field')?.amount ?? 0,
+              placeBets: bets.filter(b => b.bet_type.startsWith('place-'))
+                .map(b => ({ id: Math.random().toString(), number: parseInt(b.bet_type.split('-')[1]), amount: b.amount })),
+              buyBets: bets.filter(b => b.bet_type.startsWith('buy-'))
+                .map(b => ({ id: Math.random().toString(), number: parseInt(b.bet_type.split('-')[1]), amount: b.amount })),
+              comeBets: bets.filter(b => b.bet_type === 'come' || b.bet_type.startsWith('come-'))
+                .map(b => ({ id: Math.random().toString(), point: b.point, amount: b.amount })),
+              dontComeBets: bets.filter(b => b.bet_type === 'dont-come' || b.bet_type.startsWith('dont-come-'))
+                .map(b => ({ id: Math.random().toString(), point: b.point, amount: b.amount })),
+              passOddsBet: bets.find(b => b.bet_type === 'pass-odds')?.amount ?? 0,
+              dontPassOddsBet: bets.find(b => b.bet_type === 'dont-odds')?.amount ?? 0,
+              phase: roomData.phase,
+              point: roomData.point,
+              puckIsOn: roomData.phase === 'point' && roomData.point !== null,
+              shooterBalance: roomData.shooter_balance ?? 100,
+              shooterBet: roomData.shooter_total_bet ?? 0,
+              lastWin: roomData.last_win ?? 0,
+              lastRollDie1: roomData.last_roll_die1,
+              lastRollDie2: roomData.last_roll_die2,
+            });
+          } else {
+            setPassLineBet(bets.find(b => b.bet_type === 'pass-line')?.amount ?? 0);
+            setDontPassBet(bets.find(b => b.bet_type === 'dont-pass')?.amount ?? 0);
+            setFieldBet(bets.find(b => b.bet_type === 'field')?.amount ?? 0);
+            setPlaceBets(bets.filter(b => b.bet_type.startsWith('place-'))
+              .map(b => ({ id: Math.random().toString(), number: parseInt(b.bet_type.split('-')[1]), amount: b.amount })));
+            setBuyBets(bets.filter(b => b.bet_type.startsWith('buy-'))
+              .map(b => ({ id: Math.random().toString(), number: parseInt(b.bet_type.split('-')[1]), amount: b.amount })));
+            setComeBets(bets.filter(b => b.bet_type === 'come' || b.bet_type.startsWith('come-'))
+              .map(b => ({ id: Math.random().toString(), point: b.point, amount: b.amount })));
+            setDontComeBets(bets.filter(b => b.bet_type === 'dont-come' || b.bet_type.startsWith('dont-come-'))
+              .map(b => ({ id: Math.random().toString(), point: b.point, amount: b.amount })));
+          }
         }
       }
 
@@ -367,6 +741,36 @@ export default function Home() {
         .order('created_at', { ascending: true })
         .limit(50);
       if (initialMessages) setMessages(initialMessages);
+
+      // Fetch Initial Heatmap
+      const { data: suggestions } = await supabase
+        .from('craps_heatmap')
+        .select('*')
+        .eq('table_code', code);
+
+      if (suggestions) {
+        setAllSuggestions(suggestions);
+        setHeatmap(calculateHeatmap(suggestions, currentPlayers, roomData.current_shooter_id));
+        
+        // Restore local player's suggestions
+        const map: Record<string, 'bet' | 'pull'> = {};
+        suggestions
+          .filter(s => s.participant_id === char.playerId)
+          .forEach(s => { map[s.zone] = s.signal; });
+        setMySuggestions(map);
+      }
+
+      // Fetch Initial Rides
+      const { data: initialRides } = await supabase
+        .from('craps_rides')
+        .select('*')
+        .eq('table_code', code);
+
+      if (initialRides) {
+        setAllRides(initialRides);
+        const myRide = initialRides.find(r => r.rider_id === char.playerId && r.status === 'active');
+        if (myRide) setActiveRide(myRide);
+      }
 
       // Fetch LiveKit Token
       if (assignedTier === 1 || assignedTier === 2) {
@@ -384,9 +788,6 @@ export default function Home() {
 
     loadTable();
     
-    // Cleanup disconnected players
-    supabase.rpc('cleanup_disconnected_players').then();
-
     // Supabase Realtime Subscription
     const channel = supabase
       .channel('presence-' + code)
@@ -399,8 +800,16 @@ export default function Home() {
         if (payload.eventType === 'INSERT') {
           const newPlayer = payload.new as Player;
           setPlayers(prev => {
+            // Check if player already exists
             const exists = prev.some(p => p.player_id === newPlayer.player_id);
-            if (exists) return prev;
+            if (exists) {
+              // Update existing instead of adding new
+              const next = prev.map(p => 
+                p.player_id === newPlayer.player_id ? newPlayer : p
+              );
+              playersRef.current = next;
+              return next;
+            }
             const next = [...prev, newPlayer];
             playersRef.current = next;
             return next;
@@ -422,6 +831,19 @@ export default function Home() {
             playersRef.current = next;
             return next;
           });
+
+          // Handle ride pullback credit notification
+          if (updatedPlayer.player_id === char.playerId) {
+            setBalance(prevBalance => {
+              const change = updatedPlayer.balance - prevBalance;
+              if (change > 0 && activeRideRef.current) {
+                console.log('Ride pullback credit received:', change);
+                setRideChangeNotification(change);
+                setTimeout(() => setRideChangeNotification(null), 3000);
+              }
+              return updatedPlayer.balance;
+            });
+          }
 
           // Check if player disconnected
           if (updatedPlayer.player_id !== char.playerId && oldPlayerState && oldPlayerState.is_connected && !updatedPlayer.is_connected) {
@@ -476,6 +898,30 @@ export default function Home() {
       })
       .subscribe();
 
+    const heatmapChannel = supabase
+      .channel('heatmap-' + code)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'craps_heatmap',
+        filter: `table_code=eq.${code}`
+      }, async (payload) => {
+        console.log('Heatmap update received:', payload.eventType);
+
+        // Reload all suggestions fresh from Supabase
+        const { data: suggestions } = await supabase
+          .from('craps_heatmap')
+          .select('*')
+          .eq('table_code', code);
+
+        const fresh = suggestions ?? [];
+        setAllSuggestions(fresh);
+        setHeatmap(calculateHeatmap(fresh, playersRef.current, roomRef.current?.current_shooter_id));
+      })
+      .subscribe((status) => {
+        console.log('Heatmap subscription status:', status);
+      });
+
     const determineOutcomeForRail = (
       total: number,
       phaseBefore: string,
@@ -526,6 +972,7 @@ export default function Home() {
           newState.last_roll_die2 !== die2Ref.current;
         
         if (isNewRoll) {
+          setSessionStats(prev => ({ ...prev, totalRolls: prev.totalRolls + 1 }));
           triggerDiceAnimation(newState.last_roll_die1, newState.last_roll_die2);
           
           const outcome = determineOutcomeForRail(
@@ -553,17 +1000,39 @@ export default function Home() {
       if (newState.phase) setPhase(newState.phase);
       if (newState.point !== undefined) setPoint(newState.point);
 
+      if (newState.pending_bet_increase > 0 && activeRideRef.current) {
+        const proportionalAdd = newState.pending_bet_increase * activeRideRef.current.ride_ratio;
+        setPendingRideAdd(proportionalAdd);
+        setShowAddToRideModal(true);
+      }
+
+      if (newState.last_win !== undefined) {
+        setSessionStats(prev => ({
+          ...prev,
+          biggestWin: Math.max(prev.biggestWin, newState.last_win)
+        }));
+      }
+
       setDisplayState(prev => ({
         ...prev,
-        phase: newState.phase,
-        point: newState.point,
-        puckIsOn: newState.phase === 'point' && newState.point !== null,
-        shooterBalance: newState.shooter_balance ?? prev.shooterBalance,
-        shooterBet: newState.shooter_total_bet ?? prev.shooterBet,
+        phase: newState.phase !== undefined ? newState.phase : prev.phase,
+        point: newState.point !== undefined ? newState.point : prev.point,
+        puckIsOn: newState.phase !== undefined ? (newState.phase === 'point' && newState.point !== null) : prev.puckIsOn,
         lastWin: newState.last_win ?? prev.lastWin,
         lastRollDie1: newState.last_roll_die1,
         lastRollDie2: newState.last_roll_die2,
       }));
+
+      if (newState.shooter_total_bet !== undefined || newState.shooter_balance !== undefined) {
+        setDisplayState(prev => ({
+          ...prev,
+          shooterBet: newState.shooter_total_bet ?? prev.shooterBet,
+          shooterBalance: newState.shooter_balance ?? prev.shooterBalance
+        }));
+        if (newState.shooter_total_bet !== undefined) {
+          console.log('Updated displayState.shooterBet:', newState.shooter_total_bet);
+        }
+      }
 
       if (!isShooter) {
         const { data: bets } = await supabase
@@ -664,6 +1133,67 @@ export default function Home() {
         console.log('Bets subscription status:', status);
       });
 
+    const ridesChannel = supabase
+      .channel('rides-' + code)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'craps_rides',
+        filter: `table_code=eq.${code}`
+      }, (payload) => {
+        console.log('Ride update received:', payload);
+        
+        if (payload.eventType === 'UPDATE') {
+          const partial = payload.new as Partial<RideLink>;
+          
+          setAllRides(prev => prev.map(r => r.id === partial.id ? { ...r, ...partial } : r));
+          
+          if (activeRideRef.current?.id === partial.id) {
+            const updated = { ...activeRideRef.current, ...partial } as RideLink;
+            
+            // Update active ride state
+            setActiveRide(updated.status === 'active' ? updated : null);
+            
+            if (partial.last_win && partial.last_win > 0) {
+              // Win — already credited to balance via craps_players update
+              setBalance(prev => prev + partial.last_win!);
+              setSessionStats(prev => ({ 
+                ...prev, 
+                totalRidingEarned: prev.totalRidingEarned + partial.last_win! 
+              }));
+              setRideChangeNotification(partial.last_win!);
+              setTimeout(() => setRideChangeNotification(null), 3000);
+              console.log('Ride win notification:', partial.last_win);
+            } else if (partial.last_win && partial.last_win < 0) {
+              // Loss — deduct from stake (handled automatically by current_value update)
+              // We do NOT deduct from Credit balance because stake was already paid upfront
+              setRideChangeNotification(partial.last_win);
+              setTimeout(() => setRideChangeNotification(null), 3000);
+              console.log('Ride loss notification:', partial.last_win);
+            }
+
+            // If ride completed (stake depleted)
+            if (partial.status === 'completed') {
+              setActiveRide(null);
+              console.log('Ride ended — stake depleted to 0');
+            }
+          }
+        }
+
+        if (payload.eventType === 'INSERT') {
+          const newRide = payload.new as RideLink;
+          setAllRides(prev => [...prev, newRide]);
+        }
+
+        if (payload.eventType === 'DELETE') {
+          setAllRides(prev => prev.filter(r => r.id !== payload.old.id));
+          if (payload.old.rider_id === char.playerId) {
+            setActiveRide(null);
+          }
+        }
+      })
+      .subscribe();
+
     const handleBeforeUnload = () => {
       // Use raw fetch with keepalive to ensure it fires during tab close
       fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/craps_players?table_code=eq.${code}&player_id=eq.${char.playerId}`, {
@@ -686,6 +1216,8 @@ export default function Home() {
       supabase.removeChannel(gameChannel);
       supabase.removeChannel(betsChannel);
       supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(heatmapChannel);
+      supabase.removeChannel(ridesChannel);
     };
   }, [code, router]);
 
@@ -699,9 +1231,16 @@ export default function Home() {
     
     console.log('ATTEMPTING BET SYNC:', { betType: bet.betType, amount: bet.amount, point: bet.point, roomCode: code, localPlayerId: character.playerId })
     
+    await supabase
+      .from('craps_bets')
+      .delete()
+      .eq('table_code', code)
+      .eq('player_id', character.playerId)
+      .eq('bet_type', bet.betType);
+
     const { data, error } = await supabase
       .from('craps_bets')
-      .upsert({
+      .insert({
         table_code: code,
         player_id: character.playerId,
         bet_type: bet.betType,
@@ -709,15 +1248,13 @@ export default function Home() {
         status: bet.status,
         point: bet.point,
         updated_at: new Date().toISOString()
-      }, {
-        onConflict: 'table_code, player_id, bet_type'
       })
-      .select()
+      .select();
 
     if (error) {
-      console.error('BET SYNC FAILED:', error.message, error.details, error.hint)
+      console.error('BET SYNC FAILED:', error.message, error.details, error.hint);
     } else {
-      console.log('BET SYNC SUCCESS:', data)
+      console.log('BET SYNC SUCCESS:', data);
     }
   };
 
@@ -858,6 +1395,357 @@ export default function Home() {
     });
   }, [isShooter, passLineBet, dontPassBet, fieldBet, placeBets, buyBets, comeBets, dontComeBets, phase, point, balance, totalBets, lastWin, die1, die2]);
 
+  const handleHeatmapZoneClick = async (zone: HeatmapZone) => {
+    if (isShooter) return;
+    if (localTier === 3) return;
+
+    // Prevent double-click race condition
+    if (heatmapProcessing.current.has(zone)) {
+      console.log('Zone click ignored — already processing:', zone);
+      return;
+    }
+
+    // Lock this zone while processing
+    heatmapProcessing.current.add(zone);
+
+    try {
+      const existing = mySuggestions[zone];
+
+      if (!existing) {
+        setMySuggestions(prev => ({ ...prev, [zone]: 'bet' }));
+        const { error } = await supabase
+          .from('craps_heatmap')
+          .insert({
+            table_code: code,
+            participant_id: character?.playerId,
+            zone: zone,
+            signal: 'bet',
+            updated_at: new Date().toISOString()
+          });
+        if (error) console.error('Heatmap insert error:', error.message);
+        else console.log('Added bet suggestion on:', zone);
+
+      } else if (existing === 'bet') {
+        setMySuggestions(prev => ({ ...prev, [zone]: 'pull' }));
+        const { error } = await supabase
+          .from('craps_heatmap')
+          .update({ signal: 'pull', updated_at: new Date().toISOString() })
+          .eq('table_code', code)
+          .eq('participant_id', character?.playerId)
+          .eq('zone', zone);
+        if (error) console.error('Heatmap update error:', error.message);
+        else console.log('Changed to pull suggestion on:', zone);
+
+      } else {
+        setMySuggestions(prev => {
+          const updated = { ...prev };
+          delete updated[zone];
+          return updated;
+        });
+        const { error } = await supabase
+          .from('craps_heatmap')
+          .delete()
+          .eq('table_code', code)
+          .eq('participant_id', character?.playerId)
+          .eq('zone', zone);
+        if (error) console.error('Heatmap delete error:', error.message);
+        else console.log('Removed suggestion on:', zone);
+      }
+    } catch (error) {
+      console.error('Heatmap click error:', error);
+    } finally {
+      // Unlock zone after Supabase call completes
+      heatmapProcessing.current.delete(zone);
+    }
+  };
+
+  const startRide = async (stake: number) => {
+    const shooterTotalBets = displayState.shooterBet;
+    
+    if (shooterTotalBets === 0) {
+      console.log('Cannot ride — shooter has no active bets');
+      return;
+    }
+    if (stake > balance) return;
+    if (stake <= 0) return;
+
+    const rideRatio = stake / shooterTotalBets;
+    console.log('Starting ride:', { stake, shooterTotalBets, rideRatio });
+    console.log('displayState.shooterBet:', displayState.shooterBet);
+
+    const { data, error } = await supabase
+      .from('craps_rides')
+      .insert({
+        table_code: code,
+        rider_id: character?.playerId,
+        target_player_id: room?.current_shooter_id,
+        initial_stake: stake,
+        current_value: stake,
+        ride_ratio: rideRatio,
+        status: 'active',
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Start ride error:', error.message);
+      return;
+    }
+
+    setBalance(prev => prev - stake);
+    setActiveRide(data);
+    setShowRideModal(false);
+
+    await supabase
+      .from('craps_players')
+      .update({ balance: balance - stake })
+      .eq('table_code', code)
+      .eq('player_id', character?.playerId);
+
+    console.log('Ride started:', data);
+  };
+
+  const stopRiding = async () => {
+    if (!activeRideRef.current || !character?.playerId) return;
+
+    const ride = activeRideRef.current;
+    
+    // Return remaining stake to Credit
+    setBalance(prev => prev + ride.current_value);
+
+    await supabase
+      .from('craps_rides')
+      .update({ 
+        status: 'stopped',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', ride.id);
+
+    await supabase
+      .from('craps_players')
+      .update({ balance: balance + ride.current_value })
+      .eq('table_code', code)
+      .eq('player_id', character.playerId);
+
+    setActiveRide(null);
+    console.log('Ride stopped, returned stake:', ride.current_value);
+  };
+
+  const updateRidesAfterRoll = async (netShooterChange: number) => {
+    console.log('=== UPDATE RIDES CALLED ===');
+    console.log('netShooterChange:', netShooterChange);
+
+    if (netShooterChange === 0) return;
+
+    const { data: activeRides, error } = await supabase
+      .from('craps_rides')
+      .select('*')
+      .eq('table_code', code)
+      .eq('target_player_id', character?.playerId)
+      .eq('status', 'active');
+
+    if (error) {
+      console.error('Error fetching active rides:', error.message);
+      return;
+    }
+
+    console.log('Active rides found:', activeRides?.length);
+    if (!activeRides || activeRides.length === 0) return;
+
+    for (const ride of activeRides) {
+      console.log('Processing ride:', ride.id, 'current_value:', ride.current_value);
+
+      if (netShooterChange > 0) {
+        // Shooter won — send proportional winnings directly to rider Credit
+        const riderWinnings = netShooterChange * ride.ride_ratio;
+        console.log('Rider wins:', riderWinnings);
+
+        // Notify rider via last_win field
+        await supabase
+          .from('craps_rides')
+          .update({ 
+            last_win: riderWinnings,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', ride.id);
+
+        // Update rider balance in craps_players
+        const { data: riderPlayer } = await supabase
+          .from('craps_players')
+          .select('balance')
+          .eq('table_code', code)
+          .eq('player_id', ride.rider_id)
+          .single();
+
+        if (riderPlayer) {
+          await supabase
+            .from('craps_players')
+            .update({ balance: riderPlayer.balance + riderWinnings })
+            .eq('table_code', code)
+            .eq('player_id', ride.rider_id);
+        }
+
+      } else if (netShooterChange < 0) {
+        // Shooter lost — deduct proportionally from rider stake
+        const riderLoss = Math.abs(netShooterChange) * ride.ride_ratio;
+        const newStake = Math.max(0, ride.current_value - riderLoss);
+        console.log('Rider loses:', riderLoss, 'new stake:', newStake);
+
+        await supabase
+          .from('craps_rides')
+          .update({
+            current_value: newStake,
+            last_win: -riderLoss,  // negative value signals a loss
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', ride.id);
+
+        // If stake hits 0 mark ride as completed
+        if (newStake === 0) {
+          await supabase
+            .from('craps_rides')
+            .update({ status: 'completed' })
+            .eq('id', ride.id);
+          
+          console.log('Ride completed — stake depleted');
+        }
+      }
+    }
+  };
+
+  const notifyRidersOfBetIncrease = async (addedAmount: number) => {
+    if (!character?.playerId) return;
+    const { data: activeRides } = await supabase
+      .from('craps_rides')
+      .select('*')
+      .eq('table_code', code)
+      .eq('target_player_id', character.playerId)
+      .eq('status', 'active');
+
+    if (!activeRides || activeRides.length === 0) return;
+
+    await supabase
+      .from('craps_tables')
+      .update({ 
+        pending_bet_increase: addedAmount,
+        updated_at: new Date().toISOString()
+      })
+      .eq('code', code);
+
+    // Reset pending_bet_increase after notifying
+    setTimeout(async () => {
+      await supabase
+        .from('craps_tables')
+        .update({ pending_bet_increase: 0 })
+        .eq('code', code);
+    }, 2000);
+  };
+
+  const syncShooterBetsToTable = async (newTotalBets: number, newBalance: number) => {
+    const { error } = await supabase
+      .from('craps_tables')
+      .update({
+        shooter_total_bet: newTotalBets,
+        shooter_balance: newBalance,
+        updated_at: new Date().toISOString()
+      })
+      .eq('code', code);
+    
+    if (error) console.error('Sync shooter bets error:', error.message);
+    else console.log('Synced shooter_total_bet:', newTotalBets, 'shooter_balance:', newBalance);
+  };
+
+  const handleBetRemoval = async (removedAmount: number, betType: string) => {
+    console.log('Shooter removing bet:', betType, 'amount:', removedAmount);
+
+    // Check if anyone is riding
+    const { data: activeRides } = await supabase
+      .from('craps_rides')
+      .select('*')
+      .eq('table_code', code)
+      .eq('target_player_id', character?.playerId)
+      .eq('status', 'active');
+
+    if (!activeRides || activeRides.length === 0) return;
+
+    // Notify riders of bet decrease
+    await supabase
+      .from('craps_tables')
+      .update({
+        pending_bet_decrease: removedAmount,
+        updated_at: new Date().toISOString()
+      })
+      .eq('code', code);
+
+    // Process each rider
+    for (const ride of activeRides) {
+      const riderCredit = removedAmount * ride.ride_ratio;
+      console.log(`Crediting rider ${ride.rider_id}: $${riderCredit.toFixed(2)}`);
+
+      // Get rider's current balance
+      const { data: riderPlayer } = await supabase
+        .from('craps_players')
+        .select('balance')
+        .eq('table_code', code)
+        .eq('player_id', ride.rider_id)
+        .single();
+
+      if (riderPlayer) {
+        // Credit rider's wallet
+        await supabase
+          .from('craps_players')
+          .update({ 
+            balance: riderPlayer.balance + riderCredit 
+          })
+          .eq('table_code', code)
+          .eq('player_id', ride.rider_id);
+      }
+
+      // Update ride current_value to reflect reduced stake
+      const newStake = Math.max(0, ride.current_value - riderCredit);
+      await supabase
+        .from('craps_rides')
+        .update({
+          current_value: newStake,
+          last_win: riderCredit,  // positive = credit to wallet
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', ride.id);
+
+      console.log(`Ride stake reduced from ${ride.current_value} to ${newStake}`);
+    }
+
+    // Reset pending_bet_decrease after processing
+    setTimeout(async () => {
+      await supabase
+        .from('craps_tables')
+        .update({ pending_bet_decrease: 0 })
+        .eq('code', code);
+    }, 2000);
+  };
+
+  const handleZoneClick = async (zone: HeatmapZone, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (isShooter) {
+      if (zone === 'pass_line') handlePassLineClick();
+      else if (zone === 'dont_pass') handleDontPassClick();
+      else if (zone === 'come') handleComeClick();
+      else if (zone === 'dont_come') handleDontComeClick();
+      else if (zone === 'field') handleFieldClick();
+      else if (zone.startsWith('place_')) handlePlaceClick(parseInt(zone.split('_')[1]));
+      else if (zone.startsWith('buy_')) handleBuyClick(parseInt(zone.split('_')[1]));
+      // No bet handlers for hardways, one roll, etc yet
+      return;
+    }
+    
+    if (localTier === 3) return;
+    
+    console.log('Heatmap zone clicked:', zone);
+    await handleHeatmapZoneClick(zone);
+  };
+
   const handleComeClick = () => {
     if (phase !== 'point') {
       setShakeZone('come');
@@ -867,16 +1755,32 @@ export default function Home() {
     if (selectedChip) {
       if (balance >= selectedChip) {
         setBalance(b => b - selectedChip);
-        setTotalBets(t => t + selectedChip);
-        setComeBets(prev => {
-          const sum = prev.reduce((acc, curr) => curr.point === null ? acc + curr.amount : acc, 0) + selectedChip;
-          syncBetToSupabase({ betType: 'come', amount: sum, status: 'active', point: null });
-          return [...prev, { id: Math.random().toString(36).substr(2, 9), amount: selectedChip, point: null }];
+        setTotalBets(t => {
+          const newTotal = t + selectedChip;
+          syncShooterBetsToTable(newTotal, balance - selectedChip);
+          return newTotal;
         });
+        
+        const sum = comeBets.reduce((acc, curr) => curr.point === null ? acc + curr.amount : acc, 0) + selectedChip;
+        syncBetToSupabase({ betType: 'come', amount: sum, status: 'active', point: null });
+        setComeBets(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), amount: selectedChip, point: null }]);
       } else {
         setShakeZone('chip-' + selectedChip);
         setShowLowFundsToast(true);
         setTimeout(() => setShakeZone(null), 400);
+      }
+    } else if (!selectedChip) {
+      const activeComeBet = comeBets.filter(b => b.point === null).reduce((acc, curr) => acc + curr.amount, 0);
+      if (activeComeBet > 0) {
+        setBalance(b => b + activeComeBet);
+        setTotalBets(t => {
+          const newTotal = Math.max(0, t - activeComeBet);
+          syncShooterBetsToTable(newTotal, balance + activeComeBet);
+          return newTotal;
+        });
+        setComeBets(prev => prev.filter(b => b.point !== null));
+        removeBetFromSupabase('come');
+        handleBetRemoval(activeComeBet, 'come');
       }
     }
   };
@@ -890,15 +1794,31 @@ export default function Home() {
     if (selectedChip) {
       if (balance >= selectedChip) {
         setBalance(b => b - selectedChip);
-        setTotalBets(t => t + selectedChip);
-        setDontComeBets(prev => {
-          const sum = prev.reduce((acc, curr) => curr.point === null ? acc + curr.amount : acc, 0) + selectedChip;
-          syncBetToSupabase({ betType: 'dont-come', amount: sum, status: 'active', point: null });
-          return [...prev, { id: Math.random().toString(36).substr(2, 9), amount: selectedChip, point: null }];
+        setTotalBets(t => {
+          const newTotal = t + selectedChip;
+          syncShooterBetsToTable(newTotal, balance - selectedChip);
+          return newTotal;
         });
+        
+        const sum = dontComeBets.reduce((acc, curr) => curr.point === null ? acc + curr.amount : acc, 0) + selectedChip;
+        syncBetToSupabase({ betType: 'dont-come', amount: sum, status: 'active', point: null });
+        setDontComeBets(prev => [...prev, { id: Math.random().toString(36).substr(2, 9), amount: selectedChip, point: null }]);
       } else {
         setShakeZone('chip-' + selectedChip);
         setTimeout(() => setShakeZone(null), 400);
+      }
+    } else if (!selectedChip) {
+      const activeDcBet = dontComeBets.filter(b => b.point === null).reduce((acc, curr) => acc + curr.amount, 0);
+      if (activeDcBet > 0) {
+        setBalance(b => b + activeDcBet);
+        setTotalBets(t => {
+          const newTotal = Math.max(0, t - activeDcBet);
+          syncShooterBetsToTable(newTotal, balance + activeDcBet);
+          return newTotal;
+        });
+        setDontComeBets(prev => prev.filter(b => b.point !== null));
+        removeBetFromSupabase('dont-come');
+        handleBetRemoval(activeDcBet, 'dont-come');
       }
     }
   };
@@ -924,13 +1844,27 @@ export default function Home() {
         const newAmount = passLineBet + selectedChip;
         setBalance(b => b - selectedChip);
         setPassLineBet(newAmount);
-        setTotalBets(t => t + selectedChip);
+        setTotalBets(t => {
+          const newTotal = t + selectedChip;
+          syncShooterBetsToTable(newTotal, balance - selectedChip);
+          return newTotal;
+        });
         syncBetToSupabase({ betType: 'pass-line', amount: newAmount, status: 'active', point: null });
       } else {
         setShakeZone('chip-' + selectedChip);
         setShowLowFundsToast(true);
         setTimeout(() => setShakeZone(null), 400);
       }
+    } else if (!selectedChip && passLineBet > 0) {
+      setBalance(b => b + passLineBet);
+      setTotalBets(t => {
+        const newTotal = Math.max(0, t - passLineBet);
+        syncShooterBetsToTable(newTotal, balance + passLineBet);
+        return newTotal;
+      });
+      setPassLineBet(0);
+      removeBetFromSupabase('pass-line');
+      handleBetRemoval(passLineBet, 'pass-line');
     }
   };
 
@@ -954,13 +1888,27 @@ export default function Home() {
         const newAmount = dontPassBet + selectedChip;
         setBalance(b => b - selectedChip);
         setDontPassBet(newAmount);
-        setTotalBets(t => t + selectedChip);
+        setTotalBets(t => {
+          const newTotal = t + selectedChip;
+          syncShooterBetsToTable(newTotal, balance - selectedChip);
+          return newTotal;
+        });
         syncBetToSupabase({ betType: 'dont-pass', amount: newAmount, status: 'active', point: null });
       } else {
         setShakeZone('chip-' + selectedChip);
         setShowLowFundsToast(true);
         setTimeout(() => setShakeZone(null), 400);
       }
+    } else if (!selectedChip && dontPassBet > 0) {
+      setBalance(b => b + dontPassBet);
+      setTotalBets(t => {
+        const newTotal = Math.max(0, t - dontPassBet);
+        syncShooterBetsToTable(newTotal, balance + dontPassBet);
+        return newTotal;
+      });
+      setDontPassBet(0);
+      removeBetFromSupabase('dont-pass');
+      handleBetRemoval(dontPassBet, 'dont-pass');
     }
   };
 
@@ -969,42 +1917,64 @@ export default function Home() {
       if (balance >= selectedChip) {
         const newAmount = fieldBet + selectedChip;
         setBalance(b => b - selectedChip);
-        setTotalBets(t => t + selectedChip);
         setFieldBet(newAmount);
+        setTotalBets(t => {
+          const newTotal = t + selectedChip;
+          syncShooterBetsToTable(newTotal, balance - selectedChip);
+          return newTotal;
+        });
         syncBetToSupabase({ betType: 'field', amount: newAmount, status: 'active', point: null });
       } else {
         setShakeZone('field');
         setShowLowFundsToast(true);
         setTimeout(() => setShakeZone(null), 400);
       }
+    } else if (!selectedChip && fieldBet > 0) {
+      setBalance(b => b + fieldBet);
+      setTotalBets(t => {
+        const newTotal = Math.max(0, t - fieldBet);
+        syncShooterBetsToTable(newTotal, balance + fieldBet);
+        return newTotal;
+      });
+      setFieldBet(0);
+      removeBetFromSupabase('field');
+      handleBetRemoval(fieldBet, 'field');
     }
   };
 
   const handlePlaceClick = (number: number) => {
     if (phase !== 'point') return;
-    setPlaceBets(prev => {
-      const existing = prev.find(b => b.number === number);
-      
-      if (!existing || existing.amount === 0) {
-        if (!selectedChip) return prev;
-        if (balance < selectedChip) {
-          setShakeZone('chip-' + selectedChip);
-          setShowLowFundsToast(true);
-          setTimeout(() => setShakeZone(null), 400);
-          return prev;
-        }
-        const newBet = { id: Math.random().toString(36).substr(2, 9), number, amount: selectedChip };
-        setBalance(b => b - selectedChip);
-        setTotalBets(t => t + selectedChip);
-        syncBetToSupabase({ betType: `place-${number}`, amount: selectedChip, status: 'active', point: null });
-        return [...prev.filter(b => b.number !== number), newBet];
-      } else {
-        setBalance(b => b + existing.amount);
-        setTotalBets(t => Math.max(0, t - existing.amount));
-        removeBetFromSupabase(`place-${number}`);
-        return prev.filter(b => b.number !== number);
+    
+    const existing = placeBets.find(b => b.number === number);
+    
+    if (selectedChip) {
+      if (balance < selectedChip) {
+        setShakeZone('chip-' + selectedChip);
+        setShowLowFundsToast(true);
+        setTimeout(() => setShakeZone(null), 400);
+        return;
       }
-    });
+      const newAmount = (existing ? existing.amount : 0) + selectedChip;
+      const newBet = { id: existing ? existing.id : Math.random().toString(36).substr(2, 9), number, amount: newAmount };
+      setBalance(b => b - selectedChip);
+      setTotalBets(t => {
+        const newTotal = t + selectedChip;
+        syncShooterBetsToTable(newTotal, balance - selectedChip);
+        return newTotal;
+      });
+      syncBetToSupabase({ betType: `place-${number}`, amount: newAmount, status: 'active', point: null });
+      setPlaceBets(prev => [...prev.filter(b => b.number !== number), newBet]);
+    } else if (!selectedChip && existing && existing.amount > 0) {
+      setBalance(b => b + existing.amount);
+      setTotalBets(t => {
+        const newTotal = Math.max(0, t - existing.amount);
+        syncShooterBetsToTable(newTotal, balance + existing.amount);
+        return newTotal;
+      });
+      removeBetFromSupabase(`place-${number}`);
+      setPlaceBets(prev => prev.filter(b => b.number !== number));
+      handleBetRemoval(existing.amount, `place-${number}`);
+    }
   };
 
   const handleBuyClick = (number: number) => {
@@ -1016,34 +1986,46 @@ export default function Home() {
       setTimeout(() => setTooltip(null), 2000);
       return;
     }
-    setBuyBets(prev => {
-      const existing = prev.find(b => b.number === number);
-      
-      if (!existing || existing.amount === 0) {
-        if (!selectedChip) return prev;
-        if (balance < selectedChip) {
-          setShakeZone('chip-' + selectedChip);
-          setShowLowFundsToast(true);
-          setTimeout(() => setShakeZone(null), 400);
-          return prev;
-        }
-        const newBet = { id: Math.random().toString(36).substr(2, 9), number, amount: selectedChip };
-        setBalance(b => b - selectedChip);
-        setTotalBets(t => t + selectedChip);
-        syncBetToSupabase({ betType: `buy-${number}`, amount: selectedChip, status: 'active', point: null });
-        return [...prev.filter(b => b.number !== number), newBet];
-      } else {
-        setBalance(b => b + existing.amount);
-        setTotalBets(t => Math.max(0, t - existing.amount));
-        removeBetFromSupabase(`buy-${number}`);
-        return prev.filter(b => b.number !== number);
+    
+    const existing = buyBets.find(b => b.number === number);
+    
+    if (selectedChip) {
+      if (balance < selectedChip) {
+        setShakeZone('chip-' + selectedChip);
+        setShowLowFundsToast(true);
+        setTimeout(() => setShakeZone(null), 400);
+        return;
       }
-    });
+      const newAmount = (existing ? existing.amount : 0) + selectedChip;
+      const newBet = { id: existing ? existing.id : Math.random().toString(36).substr(2, 9), number, amount: newAmount };
+      setBalance(b => b - selectedChip);
+      setTotalBets(t => {
+        const newTotal = t + selectedChip;
+        syncShooterBetsToTable(newTotal, balance - selectedChip);
+        return newTotal;
+      });
+      syncBetToSupabase({ betType: `buy-${number}`, amount: newAmount, status: 'active', point: null });
+      setBuyBets(prev => [...prev.filter(b => b.number !== number), newBet]);
+    } else if (!selectedChip && existing && existing.amount > 0) {
+      setBalance(b => b + existing.amount);
+      setTotalBets(t => {
+        const newTotal = Math.max(0, t - existing.amount);
+        syncShooterBetsToTable(newTotal, balance + existing.amount);
+        return newTotal;
+      });
+      removeBetFromSupabase(`buy-${number}`);
+      setBuyBets(prev => prev.filter(b => b.number !== number));
+      handleBetRemoval(existing.amount, `buy-${number}`);
+    }
   };
 
   const removePassLineBet = async () => {
     setBalance(b => b + passLineBet);
-    setTotalBets(t => Math.max(0, t - passLineBet));
+    setTotalBets(t => {
+      const newTotal = Math.max(0, t - passLineBet);
+      syncShooterBetsToTable(newTotal, balance + passLineBet);
+      return newTotal;
+    });
     setPassLineBet(0);
     setWinPulse(false);
     await removeBetFromSupabase('pass-line');
@@ -1051,87 +2033,94 @@ export default function Home() {
 
   const removeDontPassBet = async () => {
     setBalance(b => b + dontPassBet);
-    setTotalBets(t => Math.max(0, t - dontPassBet));
+    setTotalBets(t => {
+      const newTotal = Math.max(0, t - dontPassBet);
+      syncShooterBetsToTable(newTotal, balance + dontPassBet);
+      return newTotal;
+    });
     setDontPassBet(0);
     setDpWinPulse(false);
     await removeBetFromSupabase('dont-pass');
   };
 
   const removeFieldBet = async () => {
-    setTotalBets(t => Math.max(0, t - fieldBet));
+    setBalance(b => b + fieldBet);
+    setTotalBets(t => {
+      const newTotal = Math.max(0, t - fieldBet);
+      syncShooterBetsToTable(newTotal, balance + fieldBet);
+      return newTotal;
+    });
     setFieldBet(0);
     await removeBetFromSupabase('field');
   };
 
-  const handleClearBets = async () => {
+  const handleClearAllBets = async () => {
     if (!isShooter || isRolling) return;
     
-    let refund = 0;
+    // Calculate total amount being removed for riders
+    let totalRemoved = passLineBet + dontPassBet + fieldBet;
+    totalRemoved += placeBets.reduce((acc, curr) => acc + curr.amount, 0);
+    totalRemoved += buyBets.reduce((acc, curr) => acc + curr.amount, 0);
+    const activeCome = comeBets.filter(b => b.point === null).reduce((acc, curr) => acc + curr.amount, 0);
+    const activeDc = dontComeBets.filter(b => b.point === null).reduce((acc, curr) => acc + curr.amount, 0);
+    totalRemoved += activeCome + activeDc;
+
+    // Reset totalBets to exactly 0 — don't calculate from individual bets
+    const refund = totalBets;  // capture current value
+    setTotalBets(0);           // hard reset to 0
+    setBalance(prev => prev + refund);
+    
+    // Then clear all individual bet states
+    setPassLineBet(0);
+    setDontPassBet(0);
+    setFieldBet(0);
+    setPlaceBets([]);
+    setBuyBets([]);
+    setComeBets([]);
+    setDontComeBets([]);
     
     if (phase === 'come-out') {
-      if (passLineBet > 0) { refund += passLineBet; await removeBetFromSupabase('pass-line'); }
-      if (dontPassBet > 0) { refund += dontPassBet; await removeBetFromSupabase('dont-pass'); }
-      setPassLineBet(0);
-      setDontPassBet(0);
+      setWinPulse(false);
+      setDpWinPulse(false);
     }
     
-    if (fieldBet > 0) {
-      refund += fieldBet;
-      await removeBetFromSupabase('field');
-      setFieldBet(0);
-    }
+    // Delete all from supabase
+    await supabase
+      .from('craps_bets')
+      .delete()
+      .eq('table_code', code)
+      .eq('player_id', character?.playerId);
+      
+    // Sync to Supabase
+    await syncShooterBetsToTable(0, balance + refund);
 
-    for (const b of placeBets) {
-      refund += b.amount;
-      await removeBetFromSupabase(`place-${b.number}`);
-    }
-    setPlaceBets([]);
-
-    for (const b of buyBets) {
-      refund += b.amount;
-      await removeBetFromSupabase(`buy-${b.number}`);
-    }
-    setBuyBets([]);
-    
-    let remainingCome = [...comeBets];
-    let remainingDc = [...dontComeBets];
-    
-    for (const b of remainingCome) {
-      if (b.point === null || b.isUnlocked) {
-        refund += b.amount;
-        await removeBetFromSupabase(b.point === null ? 'come' : `come-${b.point}`);
-      }
-    }
-    remainingCome = remainingCome.filter(b => b.point !== null && !b.isUnlocked);
-    
-    for (const b of remainingDc) {
-      if (b.point === null || b.isUnlocked) {
-        refund += b.amount;
-        await removeBetFromSupabase(b.point === null ? 'dont-come' : `dont-come-${b.point}`);
-      }
-    }
-    remainingDc = remainingDc.filter(b => b.point !== null && !b.isUnlocked);
-
-    if (refund > 0) {
-      setBalance(b => b + refund);
-      setTotalBets(t => Math.max(0, t - refund));
-      setComeBets(remainingCome);
-      setDontComeBets(remainingDc);
-      if (phase === 'come-out') {
-        setWinPulse(false);
-        setDpWinPulse(false);
-      }
-    } else {
-      if (passLineBet > 0 || dontPassBet > 0 || comeBets.length > 0 || dontComeBets.length > 0 || fieldBet > 0 || placeBets.length > 0 || buyBets.length > 0) {
-        setShakeZone('clear-bets');
-        setTimeout(() => setShakeZone(null), 400);
-      }
+    if (totalRemoved > 0) {
+      await handleBetRemoval(totalRemoved, 'all');
     }
   };
 
   const handleRollClick = async () => {
     if (isRolling || (passLineBet === 0 && dontPassBet === 0 && comeBets.length === 0 && dontComeBets.length === 0)) return;
     setDiceResting(false);
+
+    // Explicitly capture balance BEFORE any state changes
+    const balanceBeforeRoll = balance;
+    const totalBetsBeforeRoll = totalBets;
+    console.log('=== ROLL START ===');
+    console.log('Roll start — balance:', balanceBeforeRoll, 'bets:', totalBetsBeforeRoll);
+
+    // Reset heatmap for new roll
+    if (isShooter) {
+      console.log('Resetting heatmap for new roll');
+      await supabase
+        .from('craps_heatmap')
+        .delete()
+        .eq('table_code', code);
+      
+      setMySuggestions({});
+      setHeatmap({});
+      setAllSuggestions([]);
+    }
     
     const d1 = Math.floor(Math.random() * 6) + 1;
     const d2 = Math.floor(Math.random() * 6) + 1;
@@ -1160,7 +2149,7 @@ export default function Home() {
       setIsTumbling(false);
     }, 1500);
 
-    setTimeout(() => {
+    setTimeout(async () => {
       setIsRolling(false);
       setRestingDie1(d1);
       setRestingDie2(d2);
@@ -1473,7 +2462,7 @@ export default function Home() {
             resolvedBets.push({ betType: `place-${b.number}`, status: 'lost', payout: 0 });
           });
           nextPlaceBets = [];
-        } else if ([4, 5, 6, 8, 9, 10].includes(t)) {
+        } else if (PLACE_PAYOUTS[t]) {
           nextPlaceBets.forEach(b => {
             if (b.number === t) {
               const [num, den] = PLACE_PAYOUTS[t];
@@ -1511,7 +2500,7 @@ export default function Home() {
       }
       setBuyBets(nextBuyBets);
 
-      setTimeout(() => {
+      setTimeout(async () => {
         setComeFlash(null);
         setDcFlash(null);
         setFieldFlash(null);
@@ -1519,11 +2508,18 @@ export default function Home() {
 
       setBalance(nextBalance);
       setTotalBets(nextTotalBets);
+      syncShooterBetsToTable(nextTotalBets, nextBalance);
       
       if (rollWin > 50) {
         postGameEvent(lang === 'en' ? `🔥 Big win! ${character?.displayName} just won $${rollWin.toFixed(2)}!` : `🔥 ¡Gran ganancia! ¡${character?.displayName} ganó $${rollWin.toFixed(2)}!`);
       }
       setLastWin(rollWin);
+      setSessionStats(prev => ({
+        ...prev,
+        totalRolls: prev.totalRolls + 1,
+        biggestWin: Math.max(prev.biggestWin, rollWin)
+      }));
+
       
       setPassLineBet(newPassLineBet);
       setDontPassBet(newDontPassBet);
@@ -1547,6 +2543,14 @@ export default function Home() {
       }
       
       syncRollToSupabase(nextPhase, nextPoint, nextBalance);
+      console.log('=== ROLL END ===');
+      console.log('Balance after roll:', nextBalance, 'TotalBets after roll:', nextTotalBets);
+      const equityBeforeRoll = balanceBeforeRoll + totalBetsBeforeRoll;
+      const equityAfterRoll = nextBalance + nextTotalBets;
+      const netChange = equityAfterRoll - equityBeforeRoll;
+      console.log('Net equity change:', netChange);
+      console.log('Calling updateRidesAfterRoll with:', netChange);
+      await updateRidesAfterRoll(netChange);
     }, 2500);
   };
 
@@ -1591,6 +2595,10 @@ export default function Home() {
 
   const tablePlayers = players.filter(p => Number(p.tier) === 1);
   const railPlayers = players.filter(p => Number(p.tier) === 2 || Number(p.tier) === 3);
+
+  const totalRiding = allRides
+    .filter(r => r.status === 'active' && r.target_player_id === room?.current_shooter_id)
+    .reduce((sum, r) => sum + r.current_value, 0);
 
   const handleCopyInvite = (access: string) => {
     const url = `${window.location.origin}/table/${code}${access === 'guest' ? '' : `?access=${access}`}`;
@@ -1678,6 +2686,56 @@ export default function Home() {
           lang={lang} 
           position={positions[index]}
         />
+        {!isShooter && player.player_id === room?.current_shooter_id && (
+          <div className="absolute top-1/2 -translate-y-1/2 left-[110%] z-50 whitespace-nowrap">
+            {!activeRide ? (
+              <button
+                onClick={() => setShowRideModal(true)}
+                className="ride-button shadow-lg hover:scale-105 transition-transform"
+                style={{
+                  backgroundColor: '#FFD700',
+                  color: '#000',
+                  fontWeight: 'bold',
+                  fontSize: '12px',
+                  padding: '6px 12px',
+                  borderRadius: '20px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                🎿 {lang === 'en' ? 'Ride with Me' : 'Súbete Conmigo'}
+              </button>
+            ) : (
+              <div className="flex flex-col gap-2 items-start">
+                <button
+                  onClick={() => setShowRideModal(true)}
+                  className="shadow-lg hover:scale-105 transition-transform"
+                  style={{
+                    backgroundColor: '#22C55E',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    fontSize: '12px',
+                    padding: '6px 12px',
+                    borderRadius: '20px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  🎿 {lang === 'en' ? `Riding: $${activeRide.current_value.toFixed(2)}` : `Montado: $${activeRide.current_value.toFixed(2)}`}
+                </button>
+                <button
+                  onClick={stopRiding}
+                  disabled={isRolling}
+                  className="bg-red-500 hover:bg-red-600 text-white font-bold text-[10px] px-3 py-1 rounded-full whitespace-nowrap disabled:opacity-50 shadow"
+                >
+                  {lang === 'en' ? 'Stop Riding' : 'Dejar de Seguir'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -1692,8 +2750,10 @@ export default function Home() {
       .update({
         shooter_balance: balance,
         shooter_total_bet: totalBets,
+        updated_at: new Date().toISOString()
       })
-      .eq('code', code);
+      .eq('code', code)
+      .then();
   }, [balance, totalBets, isShooter, code]);
 
   const MainContent = (
@@ -1717,18 +2777,26 @@ export default function Home() {
           ) : (
             <>
               <div className="bg-black/50 px-4 py-2 rounded text-lg text-gray-400 font-medium whitespace-nowrap">
-                Shooter: <span className="text-white">{players.find(p => p.player_id === room?.current_shooter_id)?.display_name || 'Unknown'}</span>
+                Credit: <span className="text-white">${balance.toFixed(2)}</span>
               </div>
-              <div className="bg-black/50 px-4 py-2 rounded text-lg text-gray-400 font-medium whitespace-nowrap">
-                Credit: <span className="text-white">${displayState.shooterBalance.toFixed(2)}</span>
-              </div>
-              <div className="bg-black/50 px-4 py-2 rounded text-lg text-gray-400 font-medium whitespace-nowrap">
-                Bet: <span className="text-white">${displayState.shooterBet.toFixed(2)}</span>
-              </div>
-              <div className="bg-black/50 px-4 py-2 rounded text-lg text-gray-400 font-medium whitespace-nowrap">
-                Last Win: <span className={displayState.lastWin > 0 ? "text-yellow-400" : "text-white"}>${displayState.lastWin.toFixed(2)}</span>
-              </div>
+              {activeRide ? (
+                <div className="bg-black/50 px-4 py-2 rounded text-lg font-medium whitespace-nowrap" style={{ color: '#FFD700' }}>
+                  🎿 Riding: ${activeRide.current_value.toFixed(2)}
+                </div>
+              ) : null}
             </>
+          )}
+
+          {totalRiding > 0 && (
+            <div style={{
+              color: '#FFD700',
+              fontWeight: 'bold',
+              fontSize: '13px',
+              animation: totalRiding > 100 ? 'pulse 2s infinite' : 'none',
+              marginLeft: '8px'
+            }}>
+              🎿 {lang === 'en' ? `$${totalRiding.toFixed(2)} riding` : `$${totalRiding.toFixed(2)} montado`}
+            </div>
           )}
         </div>
 
@@ -1783,7 +2851,7 @@ export default function Home() {
               </div>
             )}
           </div>
-          <button onClick={() => setShowLeaveModal(true)} className="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-1.5 rounded text-sm font-bold shadow transition-colors border border-red-900/50">
+          <button onClick={() => setShowCloseOut(true)} className="bg-red-900/50 hover:bg-red-800 text-red-200 px-4 py-1.5 rounded text-sm font-bold shadow transition-colors border border-red-900/50">
             {lang === 'en' ? 'Leave' : 'Salir'}
           </button>
           {character && (
@@ -1813,29 +2881,16 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Leave Modal */}
-      {showLeaveModal && (
-        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-          <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-8 max-w-sm w-full text-center shadow-2xl animate-overlay-in">
-            <h2 className="text-xl font-bold text-white mb-6">
-              {lang === 'en' ? 'Are you sure you want to leave?' : '¿Seguro que quieres salir?'}
-            </h2>
-            <div className="flex gap-4 justify-center">
-              <button 
-                onClick={handleLeaveTable}
-                className="bg-red-600 hover:bg-red-500 text-white px-6 py-2 rounded font-bold transition-colors"
-              >
-                {lang === 'en' ? 'Leave' : 'Salir'}
-              </button>
-              <button 
-                onClick={() => setShowLeaveModal(false)}
-                className="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 rounded font-bold transition-colors"
-              >
-                {lang === 'en' ? 'Stay' : 'Quedarse'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Close Out Session Card */}
+      {showCloseOut && (
+        <CloseOutCard
+          character={character}
+          balance={balance}
+          sessionStats={sessionStats}
+          activeRide={activeRide}
+          onSave={() => {}}
+          onSkip={handleLeaveTable}
+        />
       )}
 
       {/* Connection Toasts */}
@@ -1889,7 +2944,7 @@ export default function Home() {
       <div className="flex-1 flex flex-col relative min-h-0">
         <div className="flex-1 flex flex-col pt-[80px] pb-[120px] px-[60px] bg-black relative items-center justify-center">
           {/* Main Table Felt */}
-          <main className={`w-full max-h-[75vh] flex-1 bg-[#1a5c2a] rounded-[2.5rem] border-[6px] border-[#3a2212] flex p-6 gap-6 relative shadow-[inset_0_0_50px_rgba(0,0,0,0.5)] ${!isShooter ? 'pointer-events-none' : ''}`}>
+          <main className={`w-full max-h-[75vh] flex-1 bg-[#1a5c2a] rounded-[2.5rem] border-[6px] border-[#3a2212] flex p-6 gap-6 relative shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]`}>
             
             {/* Avatars */}
             {tableSlots.map((p, i) => renderTableSlot(p, i))}
@@ -1900,25 +2955,29 @@ export default function Home() {
           <div className="bg-[#11401d] rounded-lg p-2 border-2 border-white/10 flex flex-col gap-2">
             <div className="text-center font-bold text-sm py-1 border-b border-white/10 text-white/80 tracking-wider">HARDWAYS</div>
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 cursor-pointer p-2 flex flex-col items-center gap-1 transition-all">
+              <div onClick={(e) => handleZoneClick('hard_4', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 p-2 flex flex-col items-center gap-1 transition-all relative">
+                 <ZoneOverlay zone="hard_4" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
                  <div className="flex gap-1">
                    <Dice value={2} /> <Dice value={2} />
                  </div>
                  <div className="text-yellow-400 text-[10px] font-bold">10 FOR 1</div>
               </div>
-              <div className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 cursor-pointer p-2 flex flex-col items-center gap-1 transition-all">
+              <div onClick={(e) => handleZoneClick('hard_6', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 p-2 flex flex-col items-center gap-1 transition-all relative">
+                 <ZoneOverlay zone="hard_6" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
                  <div className="flex gap-1">
                    <Dice value={3} /> <Dice value={3} />
                  </div>
                  <div className="text-yellow-400 text-[10px] font-bold">10 FOR 1</div>
               </div>
-              <div className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 cursor-pointer p-2 flex flex-col items-center gap-1 transition-all">
+              <div onClick={(e) => handleZoneClick('hard_8', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 p-2 flex flex-col items-center gap-1 transition-all relative">
+                 <ZoneOverlay zone="hard_8" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
                  <div className="flex gap-1">
                    <Dice value={4} /> <Dice value={4} />
                  </div>
                  <div className="text-yellow-400 text-[10px] font-bold">8 FOR 1</div>
               </div>
-              <div className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 cursor-pointer p-2 flex flex-col items-center gap-1 transition-all">
+              <div onClick={(e) => handleZoneClick('hard_10', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 p-2 flex flex-col items-center gap-1 transition-all relative">
+                 <ZoneOverlay zone="hard_10" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
                  <div className="flex gap-1">
                    <Dice value={5} /> <Dice value={5} />
                  </div>
@@ -1931,33 +2990,42 @@ export default function Home() {
           <div className="bg-[#11401d] rounded-lg p-2 border-2 border-white/10 flex flex-col gap-2 flex-1">
             <div className="text-center font-bold text-sm py-1 border-b border-white/10 text-white/80 tracking-wider">ONE ROLL BETS</div>
             
-            <div className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 cursor-pointer p-2 flex justify-between items-center text-red-500 font-bold transition-all mt-1">
+            <div onClick={(e) => handleZoneClick('any_seven', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 p-2 flex justify-between items-center text-red-500 font-bold transition-all mt-1 relative">
+              <ZoneOverlay zone="any_seven" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
               <span className="text-yellow-400 text-[10px] font-normal">5 FOR 1</span>
-              <span className="text-lg tracking-widest">SEVEN</span>
-              <span className="text-yellow-400 text-[10px] font-normal">5 FOR 1</span>
+              <span className="text-lg tracking-widest z-10 relative">SEVEN</span>
+              <span className="text-yellow-400 text-[10px] font-normal z-10 relative">5 FOR 1</span>
             </div>
 
-            <div className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 cursor-pointer p-2 flex flex-col items-center gap-2 transition-all">
+            <div onClick={(e) => handleZoneClick('horn', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 p-2 flex flex-col items-center gap-2 transition-all relative">
+              <ZoneOverlay zone="horn" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
               <div className="flex justify-between w-full px-2">
-                 <div className="flex gap-1"><Dice value={1}/><Dice value={2}/></div>
-                 <div className="flex gap-1"><Dice value={1}/><Dice value={1}/></div>
+                 <div className="flex gap-1 z-10 relative"><Dice value={1}/><Dice value={2}/></div>
+                 <div className="flex gap-1 z-10 relative"><Dice value={1}/><Dice value={1}/></div>
               </div>
-              <div className="font-bold text-base tracking-wider text-white">HORN BET</div>
+              <div className="font-bold text-base tracking-wider text-white z-10 relative">HORN BET</div>
               <div className="flex justify-between w-full px-2">
-                 <div className="flex gap-1"><Dice value={6}/><Dice value={6}/></div>
-                 <div className="flex gap-1"><Dice value={5}/><Dice value={6}/></div>
+                 <div className="flex gap-1 z-10 relative"><Dice value={6}/><Dice value={6}/></div>
+                 <div className="flex gap-1 z-10 relative"><Dice value={5}/><Dice value={6}/></div>
               </div>
             </div>
 
-            <div className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 cursor-pointer p-2 flex justify-between items-center text-red-500 font-bold transition-all">
-              <span className="text-yellow-400 text-[10px] font-normal">8 FOR 1</span>
-              <span className="text-sm tracking-wider">ANY CRAPS</span>
-              <span className="text-yellow-400 text-[10px] font-normal">8 FOR 1</span>
+            <div onClick={(e) => handleZoneClick('any_craps', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className="bg-[#0a2e13] border border-white/20 rounded hover:brightness-110 p-2 flex justify-between items-center text-red-500 font-bold transition-all relative">
+              <ZoneOverlay zone="any_craps" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
+              <span className="text-yellow-400 text-[10px] font-normal z-10 relative">8 FOR 1</span>
+              <span className="text-sm tracking-wider z-10 relative">ANY CRAPS</span>
+              <span className="text-yellow-400 text-[10px] font-normal z-10 relative">8 FOR 1</span>
             </div>
 
             <div className="flex gap-4 justify-center mt-auto pb-2">
-               <div className="w-12 h-12 rounded-full border-2 border-white/40 flex items-center justify-center font-bold hover:brightness-110 bg-[#0a2e13] cursor-pointer text-sm text-white transition-all shadow-md">C&E</div>
-               <div className="w-12 h-12 rounded-full border-2 border-white/40 flex items-center justify-center font-bold hover:brightness-110 bg-[#0a2e13] cursor-pointer text-xl text-white transition-all shadow-md">E</div>
+               <div onClick={(e) => handleZoneClick('ce', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className="w-12 h-12 rounded-full border-2 border-white/40 flex items-center justify-center font-bold hover:brightness-110 bg-[#0a2e13] text-sm text-white transition-all shadow-md relative overflow-hidden">
+                 <ZoneOverlay zone="ce" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
+                 <span className="z-10 relative">C&E</span>
+               </div>
+               <div onClick={(e) => handleZoneClick('ce', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className="w-12 h-12 rounded-full border-2 border-white/40 flex items-center justify-center font-bold hover:brightness-110 bg-[#0a2e13] text-xl text-white transition-all shadow-md relative overflow-hidden">
+                 <ZoneOverlay zone="ce" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
+                 <span className="z-10 relative">E</span>
+               </div>
             </div>
           </div>
         </div>
@@ -1980,14 +3048,15 @@ export default function Home() {
               {num: '2', place: '13 FOR 2', val: 2}, {num: '3', place: '15 FOR 4', val: 3}, {num: '4', place: '14 FOR 5', val: 4}, {num: '5', place: '12 FOR 5', val: 5}, {num: 'SIX', place: '13 FOR 6', val: 6},
               {num: '8', place: '13 FOR 6', val: 8}, {num: 'NINE', place: '12 FOR 5', val: 9}, {num: '10', place: '14 FOR 5', val: 10}, {num: '11', place: '15 FOR 4', val: 11}, {num: '12', place: '13 FOR 2', val: 12}
             ].map((col, i) => (
-              <div key={i} onClick={() => handlePlaceClick(col.val)} className={`flex flex-col border-r-2 border-white/10 last:border-r-0 hover:brightness-110 cursor-pointer relative group transition-all`}>
+              <div key={i} onClick={(e) => handleZoneClick(`place_${col.val}` as HeatmapZone, e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className={`flex flex-col border-r-2 border-white/10 last:border-r-0 hover:brightness-110 relative group transition-all`}>
+                <ZoneOverlay zone={`place_${col.val}`} heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
                 {isPuckOn && renderPuckNumber === col.val && (
                   <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full border-[3px] border-yellow-400 bg-white flex flex-col items-center justify-center font-black text-black shadow-xl z-20 leading-none">
                      <span className="text-[10px]">ON</span>
                      <span className="text-lg">{renderPuckNumber}</span>
                   </div>
                 )}
-                <div onClick={(e) => { e.stopPropagation(); handleBuyClick(col.val); }} className={`text-center text-[10px] py-1 border-b-2 border-white/10 text-white/70 font-bold hover:bg-white hover:text-black group-hover:text-white transition-all ${shakeZone === 'buy-'+col.val ? 'animate-[shake_0.2s_ease-in-out_2] bg-red-500 text-white' : ''}`}>BUY</div>
+                <div onClick={(e) => handleZoneClick(`buy_${col.val}` as HeatmapZone, e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className={`text-center text-[10px] py-1 border-b-2 border-white/10 text-white/70 font-bold hover:bg-white hover:text-black group-hover:text-white transition-all ${shakeZone === 'buy-'+col.val ? 'animate-[shake_0.2s_ease-in-out_2] bg-red-500 text-white' : ''}`}>BUY</div>
                 <div className="flex-1 flex items-center justify-center text-4xl font-black py-4 text-white drop-shadow-md relative">
                   {col.num}
                   {/* Come / Don't Come Traveling Chips */}
@@ -2085,7 +3154,8 @@ export default function Home() {
               </div>
               <div className="flex-1 flex flex-col gap-2 relative">
                 {/* Don't Come */}
-                <div onClick={handleDontComeClick} className={`h-8 w-full border-[2px] border-white/20 rounded-lg flex items-center justify-center text-sm font-black text-red-500 tracking-widest hover:brightness-110 cursor-pointer bg-[#0a2e13] transition-all shadow-inner relative z-10 ${shakeZone === 'dontcome' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}>
+                <div onClick={(e) => handleZoneClick('dont_come', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className={`h-8 w-full border-[2px] border-white/20 rounded-lg flex items-center justify-center text-sm font-black text-red-500 tracking-widest hover:brightness-110 transition-all shadow-inner relative z-10 ${shakeZone === 'dontcome' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}>
+                   <ZoneOverlay zone="dont_come" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
                    DON'T COME
                    {dcFlash && (
                      <div className={`absolute inset-0 flex items-center justify-center font-black text-xs z-20 rounded animate-overlay-in ${dcFlash.includes('WINS') ? 'bg-yellow-500/80 text-black' : dcFlash === 'PUSH' ? 'bg-yellow-500/80 text-black' : 'bg-black/80 text-white'}`}>
@@ -2107,7 +3177,8 @@ export default function Home() {
                    ))}
                 </div>
                 {/* Come */}
-                <div onClick={handleComeClick} className={`flex-1 border-[4px] border-[#39ff14] rounded-lg flex items-center justify-center text-4xl xl:text-5xl font-black text-red-500 tracking-widest hover:brightness-110 cursor-pointer bg-[#0a2e13]/40 shadow-[0_0_20px_rgba(57,255,20,0.15)_inset] transition-all relative overflow-hidden z-10 ${shakeZone === 'come' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}>
+                <div onClick={(e) => handleZoneClick('come', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className={`flex-1 border-[4px] border-[#39ff14] rounded-lg flex items-center justify-center text-4xl xl:text-5xl font-black text-red-500 tracking-widest hover:brightness-110 bg-[#0a2e13]/40 shadow-[0_0_20px_rgba(57,255,20,0.15)_inset] transition-all relative overflow-hidden z-10 ${shakeZone === 'come' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}>
+                  <ZoneOverlay zone="come" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
                   COME
                   {comeFlash && (
                      <div className={`absolute inset-0 flex items-center justify-center font-black text-xl z-20 rounded animate-overlay-in ${comeFlash.includes('WINS') ? 'bg-yellow-500/80 text-black' : 'bg-black/80 text-white'}`}>
@@ -2142,7 +3213,8 @@ export default function Home() {
             </div>
 
             {/* Right Column (FIELD) */}
-            <div onClick={handleFieldClick} className={`flex-[0.6] border-[3px] border-white/30 rounded-lg flex flex-col items-center justify-center hover:brightness-110 cursor-pointer bg-[#0a2e13]/60 transition-all p-4 min-w-0 overflow-hidden relative ${shakeZone === 'field' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}>
+            <div onClick={(e) => handleZoneClick('field', e)} style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }} className={`flex-[0.6] border-[3px] border-white/30 rounded-lg flex flex-col items-center justify-center hover:brightness-110 bg-[#0a2e13]/60 transition-all p-4 min-w-0 overflow-hidden relative ${shakeZone === 'field' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}>
+               <ZoneOverlay zone="field" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
                {fieldFlash && (
                  <div className={`absolute inset-0 flex items-center justify-center font-black text-xl z-20 rounded animate-overlay-in ${fieldFlash.includes('WINS') ? 'bg-yellow-500/80 text-black' : 'bg-red-600/80 text-white'}`}>
                    {fieldFlash}
@@ -2179,9 +3251,11 @@ export default function Home() {
           <div className="flex flex-col w-full shrink-0 gap-3">
             {/* Don't Pass */}
             <div 
-              onClick={handleDontPassClick}
-              className={`h-10 w-full border-[3px] ${isPuckOn && displayState.dontPassBet > 0 ? 'border-red-500' : 'border-white/20'} rounded-lg flex items-center justify-center text-xl xl:text-2xl font-black text-red-600 tracking-widest hover:brightness-110 cursor-pointer bg-[#0a2e13] transition-all shadow-inner relative ${shakeZone === 'dontpass' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}
+              onClick={(e) => handleZoneClick('dont_pass', e)}
+              style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }}
+              className={`h-10 w-full border-[3px] ${isPuckOn && displayState.dontPassBet > 0 ? 'border-red-500' : 'border-white/20'} rounded-lg flex items-center justify-center text-xl xl:text-2xl font-black text-red-600 tracking-widest hover:brightness-110 bg-[#0a2e13] transition-all shadow-inner relative ${shakeZone === 'dontpass' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}
             >
+              <ZoneOverlay zone="dont_pass" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
               DON'T PASS BAR
               {pushZone === 'dont-pass' && (
                 <div className="absolute inset-0 bg-yellow-500/80 flex items-center justify-center text-black font-black text-xl z-20 rounded animate-overlay-in">
@@ -2217,11 +3291,13 @@ export default function Home() {
             </div>
 
             {/* Pass Line */}
-            {console.log('Pass Line render — displayState.passLineBet:', displayState.passLineBet, 'isShooter:', isShooter)}
+
             <div 
-              onClick={handlePassLineClick}
-              className={`h-20 w-full border-[3px] ${isPuckOn && displayState.passLineBet > 0 ? 'border-yellow-400' : 'border-white/30'} rounded-lg flex items-center justify-center text-4xl xl:text-5xl font-black text-[#3b82f6] tracking-widest hover:brightness-110 cursor-pointer bg-[#0a2e13] transition-all shadow-inner relative ${shakeZone === 'passline' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}
+              onClick={(e) => handleZoneClick('pass_line', e)}
+              style={{ cursor: isShooter ? 'pointer' : localTier <= 2 ? 'pointer' : 'default' }}
+              className={`h-20 w-full border-[3px] ${isPuckOn && displayState.passLineBet > 0 ? 'border-yellow-400' : 'border-white/30'} rounded-lg flex items-center justify-center text-4xl xl:text-5xl font-black text-[#3b82f6] tracking-widest hover:brightness-110 bg-[#0a2e13] transition-all shadow-inner relative ${shakeZone === 'passline' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}
             >
+              <ZoneOverlay zone="pass_line" heatmap={heatmap} mySuggestions={mySuggestions} isRolling={isRolling} />
               PASS LINE
               {tooltip?.zone === 'passline' && (
                 <div className="absolute inset-0 bg-black/80 flex items-center justify-center text-white font-bold text-lg z-20 rounded animate-overlay-in">
@@ -2264,21 +3340,65 @@ export default function Home() {
         </div>
 
       </main>
-      
+
+      {/* Heatmap Legend */}
+      {localTier <= 2 && !isShooter && (
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          justifyContent: 'center',
+          fontSize: '11px',
+          color: 'rgba(255,255,255,0.6)',
+          padding: '4px 0'
+        }}>
+          <span>🟢 {lang === 'en' ? 'Bet Here' : 'Apostar'}</span>
+          <span>🔴 {lang === 'en' ? 'Pull Back' : 'Retirar'}</span>
+          <span>• {lang === 'en' ? 'Click any zone to suggest' : 'Haz clic para sugerir'}</span>
+        </div>
+      )}
+
+      {isShooter && Object.keys(heatmap).length > 0 && (
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          justifyContent: 'center',
+          fontSize: '11px',
+          color: 'rgba(255,255,255,0.6)',
+          padding: '4px 0'
+        }}>
+          <span>🟢 {lang === 'en' ? 'Crowd says bet' : 'La gente dice apostar'}</span>
+          <span>🔴 {lang === 'en' ? 'Crowd says pull back' : 'La gente dice retirar'}</span>
+        </div>
+      )}
 
         </div>
       </div>      {/* Bottom Bar */}
       <div className="h-24 bg-[#111] flex justify-between items-center px-6 border-t border-black shrink-0 z-10 relative">
         {!isShooter && room && (
-          <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-center backdrop-blur-sm">
+          <div className="absolute inset-0 bg-black/60 z-20 flex items-center justify-between backdrop-blur-sm px-8">
             <span className="text-white/80 font-bold tracking-widest text-sm uppercase">
               {lang === 'en' ? `Watching ${players.find(p => p.player_id === room.current_shooter_id)?.display_name || 'Shooter'} roll` : `Viendo tirar a ${players.find(p => p.player_id === room.current_shooter_id)?.display_name || 'Tirador'}`}
             </span>
+            <div className="bg-black/50 px-4 py-2 rounded text-lg text-gray-400 font-medium whitespace-nowrap relative">
+              Credit: <span className="text-white">${balance.toFixed(2)}</span>
+              {rideChangeNotification !== null && (
+                <div style={{
+                  position: 'absolute',
+                  top: '-20px',
+                  color: rideChangeNotification >= 0 ? '#22C55E' : '#EF4444',
+                  fontWeight: 'bold',
+                  fontSize: '14px',
+                  animation: 'fadeUp 3s forwards'
+                }}>
+                  {rideChangeNotification >= 0 ? '+' : ''}${rideChangeNotification.toFixed(2)}
+                </div>
+              )}
+            </div>
           </div>
         )}
         <button 
-          onClick={handleClearBets}
-          disabled={!isShooter}
+          onClick={handleClearAllBets}
+          disabled={(passLineBet === 0 && dontPassBet === 0) || !isShooter || isRolling}
           className={`bg-[#dc2626] hover:bg-[#ef4444] text-white font-black py-3 px-8 rounded-full shadow-[0_0_15px_rgba(220,38,38,0.3)] transition-all text-sm tracking-wider ${(passLineBet === 0 && dontPassBet === 0) || !isShooter ? 'opacity-50 cursor-not-allowed' : ''} ${shakeZone === 'clear-bets' ? 'animate-[shake_0.2s_ease-in-out_2]' : ''}`}
         >
           CLEAR ALL BETS
@@ -2348,6 +3468,117 @@ export default function Home() {
         players={players}
         currentShooterId={room?.current_shooter_id || null}
       />
+
+      {/* Ride With Me Modal */}
+      {showRideModal && (
+        <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-8 max-w-sm w-full text-center shadow-2xl animate-overlay-in">
+            <h2 className="text-xl font-bold text-white mb-2">
+              {lang === 'en' ? `Ride with ${players.find(p => p.player_id === room?.current_shooter_id)?.display_name || 'Shooter'}` : `Súbete con ${players.find(p => p.player_id === room?.current_shooter_id)?.display_name || 'Tirador'}`}
+            </h2>
+            <div className="text-gray-400 mb-6 text-sm">
+              {lang === 'en' ? `Currently betting: $${displayState.shooterBet.toFixed(2)}` : `Apostando: $${displayState.shooterBet.toFixed(2)}`}
+            </div>
+            
+            <div className="mb-6">
+              <label className="block text-sm font-bold text-white mb-2">{lang === 'en' ? 'Your stake' : 'Tu apuesta'}</label>
+              <input 
+                type="number" 
+                placeholder={lang === 'en' ? 'Enter amount' : 'Ingresa cantidad'}
+                className="w-full bg-black text-white px-4 py-2 rounded border border-gray-600 focus:border-yellow-400 outline-none text-center font-bold text-lg"
+                min="1" 
+                max={balance}
+                value={rideStake}
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => setRideStake(e.target.value)}
+              />
+              <div className="text-xs text-yellow-400 mt-2 font-bold tracking-wide">
+                {displayState.shooterBet > 0 && rideStake !== '' 
+                  ? (lang === 'en' 
+                      ? `You will mirror ${((Number(rideStake) / displayState.shooterBet) * 100).toFixed(1)}% of their bets` 
+                      : `Reflejarás el ${((Number(rideStake) / displayState.shooterBet) * 100).toFixed(1)}% de sus apuestas`)
+                  : ''}
+              </div>
+            </div>
+
+            {displayState.shooterBet === 0 ? (
+              <div className="text-red-500 font-bold mb-6 text-sm">
+                {lang === 'en' ? 'Shooter has no active bets. Wait for them to place bets first.' : 'El tirador no tiene apuestas. Espera a que apueste primero.'}
+              </div>
+            ) : null}
+
+            <div className="flex gap-4 justify-center">
+              <button 
+                disabled={displayState.shooterBet === 0 || rideStake === '' || balance < Number(rideStake) || Number(rideStake) <= 0}
+                onClick={() => startRide(Number(rideStake))}
+                className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-2 rounded font-bold transition-colors disabled:opacity-50"
+              >
+                {lang === 'en' ? 'Start Riding' : 'Empezar'}
+              </button>
+              <button 
+                onClick={() => setShowRideModal(false)}
+                className="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 rounded font-bold transition-colors"
+              >
+                {lang === 'en' ? 'Cancel' : 'Cancelar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add To Ride Modal */}
+      {showAddToRideModal && (
+        <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-8 max-w-sm w-full text-center shadow-2xl animate-overlay-in">
+            <h2 className="text-xl font-bold text-white mb-2">
+              {lang === 'en' 
+                ? `${players.find(p => p.player_id === room?.current_shooter_id)?.display_name || 'Shooter'} added to their bets` 
+                : `${players.find(p => p.player_id === room?.current_shooter_id)?.display_name || 'Tirador'} aumentó sus apuestas`}
+            </h2>
+            <div className="text-gray-300 font-bold mb-6 text-sm">
+              {lang === 'en' 
+                ? `Add $${pendingRideAdd.toFixed(2)} to keep your ratio?` 
+                : `¿Agregar $${pendingRideAdd.toFixed(2)} para mantener tu proporción?`}
+            </div>
+
+            <div className="flex gap-4 justify-center">
+              <button 
+                disabled={balance < pendingRideAdd}
+                onClick={async () => {
+                  if (activeRide && balance >= pendingRideAdd) {
+                    const newInitialStake = activeRide.initial_stake + pendingRideAdd;
+                    const newCurrentValue = activeRide.current_value + pendingRideAdd;
+                    await supabase
+                      .from('craps_rides')
+                      .update({ initial_stake: newInitialStake, current_value: newCurrentValue, updated_at: new Date().toISOString() })
+                      .eq('id', activeRide.id);
+                    setBalance(prev => prev - pendingRideAdd);
+                    await supabase
+                      .from('craps_players')
+                      .update({ balance: balance - pendingRideAdd })
+                      .eq('table_code', code)
+                      .eq('player_id', character?.playerId);
+                    setShowAddToRideModal(false);
+                    setPendingRideAdd(0);
+                  }
+                }}
+                className="bg-yellow-500 hover:bg-yellow-400 text-black px-6 py-2 rounded font-bold transition-colors disabled:opacity-50"
+              >
+                {lang === 'en' ? 'Add to Ride' : 'Agregar'}
+              </button>
+              <button 
+                onClick={() => {
+                  setShowAddToRideModal(false);
+                  setPendingRideAdd(0);
+                }}
+                className="bg-gray-700 hover:bg-gray-600 text-white px-6 py-2 rounded font-bold transition-colors"
+              >
+                {lang === 'en' ? 'Keep Riding' : 'Seguir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

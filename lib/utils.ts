@@ -31,3 +31,31 @@ export function generateUUID(): string {
     return v.toString(16)
   })
 }
+
+export const HEATMAP_ZONES = [
+  'pass_line', 'dont_pass',
+  'come', 'dont_come',
+  'field',
+  'place_2', 'place_3', 'place_4', 'place_5', 'place_6',
+  'place_8', 'place_9', 'place_10', 'place_11', 'place_12',
+  'buy_4', 'buy_5', 'buy_6', 'buy_8', 'buy_9', 'buy_10',
+  'hard_4', 'hard_6', 'hard_8', 'hard_10',
+  'any_seven', 'horn', 'any_craps', 'ce'
+] as const
+
+export type HeatmapZone = typeof HEATMAP_ZONES[number]
+
+export interface HeatmapSuggestion {
+  id: string
+  table_code: string
+  participant_id: string
+  zone: HeatmapZone
+  signal: 'bet' | 'pull'
+  updated_at: string
+}
+
+export interface ZoneHeatmap {
+  betPercent: number
+  pullPercent: number
+  totalVoters: number
+}
